@@ -124,14 +124,20 @@ Core has two row constraints: Lacks, `k ∉ ρ`, and Disjoint, `ρ1 # ρ2` (spec
 
    This characterization is a lemma about the present constraint language. A positive constraint, such as one requiring a key to be present or a row to be non-empty, would invalidate it.
 
+Entailment is decided over a list of hypotheses, the context's facts followed by its assumptions (`Stella.Core.Entail`). An *atomic fact* is `k ∉ t` or `t1 # t2`, where `t`, `t1`, and `t2` are canonical tails (§2.1). Each hypothesis decomposes into atomic facts, and decomposing an inconsistent hypothesis fails. A constraint is entailed when its own decomposition succeeds and every atomic fact in it is among the hypotheses' facts, `#` being read symmetrically. Because atomic facts range over canonical tails rather than variables, substitution maps the facts of a hypothesis to the facts of its image.
+
 The syntactic renaming and substitution operations know nothing about consistency. The lemmas connecting them to entailment and typing are:
 
 1. canonicalization commutes with substitution (§2.1);
-2. the inconsistency characterization above is complete;
-3. entailment is preserved by substitution: `Γ ⊨ C` implies `Γ[σ] ⊨ C[σ]`, where `σ` is kind-correct, well scoped, and locally closed for regions;
+2. the inconsistency characterization above is sound and complete. Soundness: an inconsistent hypothesis is not entailed by the empty context under any substitution, because substitution never removes a known key. Completeness: a consistent hypothesis whose tails are all variables is entailed by the empty context once every variable is replaced with `()`;
+3. entailment is preserved by every renaming and substitution: `Γ ⊨ C` implies `Γ[σ] ⊨ C[σ]`, with no condition on `σ`;
 4. cut for entailment;
 5. cut for kinding and typing: `Γ ⊨ C` and `Γ, C ⊢ J` imply `Γ ⊢ J`;
-6. if `Γ` is consistent and `Γ ⊨ C`, then `Γ, C` is consistent, and each atomic fact it adds already follows from `Γ`.
+6. if `Γ` is consistent and `Γ ⊨ C`, then `Γ, C` is consistent, and each atomic fact it adds already follows from `Γ`;
+7. entailment is preserved by adding hypotheses (weakening);
+8. entailment is preserved by a region map that is injective on the keys of the entailed constraint. In particular, it is preserved by opening a region with an atom that does not occur in the entailed constraint, whatever the hypotheses are. Without that condition the lemma fails, because a region map can merge two keys: opening `RegionKey (RBound 0) ∉ ( RegionKey (RFree a) | r )` with `a` gives an inconsistent constraint.
+
+The substitution lemma of the typing relation does need a kind-correct, well-scoped substitution that is locally closed for regions. Entailment alone needs none of these.
 
 Together these give preservation for `(Λ(_ : C). v) [•] → v`, and type application needs no side condition. Progress is unaffected: evaluation runs on closed terms, whose empty context is consistent, and enters the body of a `Λ(_ : C)` only after the matching `[•]`.
 
