@@ -63,7 +63,7 @@ Type equality is equality of canonical forms:
 ty_eq τ1 τ2  ≜  canon τ1 = canon τ2
 ```
 
-`canon` normalizes rows recursively, including inside payloads, and leaves every other type former unchanged. Because type equality is a computation rather than an inductive relation closed under transitivity, the inversion lemmas that progress and preservation need are immediate. For example, `Function τ1 ρ τ2 ≡ Function τ1' ρ' τ2'` implies that the components are equal.
+`canon` normalizes rows recursively, including inside payloads, and leaves every other type former unchanged. Because type equality is a computation rather than an inductive relation closed under transitivity, the inversion lemmas that progress and preservation need are immediate when both sides use the same type former. For example, `Function τ1 ρ τ2 ≡ Function τ1' ρ' τ2'` implies that the components are equal. A row union can canonicalize to a non-row form (`a ⊎ ()` is `a`), so comparing against an arbitrary type goes through `canon`.
 
 Kinding, entailment (`Γ ⊨ C`), and type equality are deterministic and syntax-directed, so all three are total functions. Only term typing is an inductive relation, because it has a conversion rule and has to cover the run-time forms.
 
@@ -72,14 +72,27 @@ Kinding, entailment (`Γ ⊨ C`), and type equality are deterministic and syntax
 The canonical form of a row is a pair:
 
 - a **set of entries**, each a pair of a key and the canonical form of its payload; and
-- a **set of tails**, the row variables of the unknown remainder.
+- a **set of tails**, the canonical forms of the types that make up the unknown remainder.
 
-Union of rows is set union on both components. Several things follow from this definition:
+In a well-kinded row every tail is a row variable. Canonicalization does not consult kinds, so a non-row type in a row position is also a tail (an *opaque tail*). Sets are sorted, duplicate-free lists under a total order on canonical forms, so equal sets are equal lists (`Stella.Core.OrdSet`).
+
+The rows are built as follows:
+
+- `()` has no entries and no tails.
+- A row with no entries and exactly one tail is that tail. So `canon a = canon (a ⊎ ())`, and a row variable has the same canonical form wherever it stands.
+- Union of rows is set union on both components, followed by normalization.
+
+Several things follow from this definition:
 
 - `canon` is total. Entries that agree on both key and payload collapse into one, and entries with the same key but different payloads remain distinct.
-- Union is idempotent: `r ⊎ r` and `r` have the same canonical form.
-- `knownKeys(ρ)` is the set of keys of the entries of `canon ρ`.
-- Canonicalization commutes with substitution. `canon (τ[σ])` is determined by `canon τ` and `σ`: each tail `t` is replaced by `canon (σ t)`, and the results are united. Type equality is therefore preserved by every substitution.
+- Union is idempotent, commutative, and associative up to `ty_eq`: `r ⊎ r` and `r` have the same canonical form.
+- `knownKeys(ρ)` is the key projection of the entries of `canon ρ`. A key that occurs with several payloads occurs several times.
+- Canonicalization commutes with renaming, substitution, and the region operations of §1.3. `canon (τ[σ])` is determined by `canon τ` and `σ`:
+  - each tail `t` is replaced by `canon (σ t)`, read as a row;
+  - payloads are substituted as well;
+  - the result is normalized again, because entries and tails can merge.
+
+  Type equality is therefore preserved by every renaming and substitution, and by opening and closing regions, with no kinding hypothesis.
 - On *sharp* rows (rows in which no key occurs twice, spec 02 §Sharpness), the entry set is the graph of a finite map, so this canonical form coincides with the specification's `nf`.
 
 Ruling out repeated keys is the job of kinding, not of type equality.
