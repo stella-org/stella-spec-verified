@@ -207,36 +207,41 @@ Evaluation contexts are defunctionalized: an evaluation context is a list of fra
 
 ### 4.1 The global signature Σ
 
-`Σ` is a parameter of every judgement and never changes during checking (spec 05 §Contexts). It is a record of finite maps keyed by qualified names:
+`Σ` is a parameter of every judgement and never changes during checking (spec 05 §Contexts). It is a record of lookup functions keyed by qualified names (`Stella.Core.Sig`):
 
-- **type constructors**: a kind scheme, and whether the constructor is intrinsic (together with its canonical-value class) or a data type;
-- **data constructors**: the owning type, tag, arity, and type scheme;
-- **effects**: the kinds of the parameters, and for each operation its signature `forall b̄. σ ->* τ` (index order as in §3.1);
-- **foreigns**: a type scheme, and whether the declaration asserts `#observ(none)`;
-- **top-level values**: a type scheme.
+- **`tycons`**: the number of kind variables of the scheme, the kind, and the class. The class is either intrinsic, with a canonical-value class (literal, function, record, variant, or opaque), or data, with the constructor names;
+- **`ctors`**: the owning type, tag, arity, number of kind variables, and type;
+- **`effects`**: the kinds of the parameters, and for each operation its signature `forall b̄. σ ->* τ` (index order as in §3.1);
+- **`foreigns`**: the number of kind variables, the type, and whether the declaration asserts `#observ(none)`;
+- **`values`**: the number of kind variables and the type.
 
-The typing judgements assume a well-formed `Σ`.
+The judgements assume a well-formed `Σ` (`Stella.Core.Sig.Wf`). Its kinding conditions are:
+
+- a type constructor's kind is a well-formed quantifiable kind that produces `Type`;
+- an effect's parameters are quantifiable;
+- every declared type is kinded at `Type` under its kind variables.
 
 ### 4.2 The local context Γ
 
-The specification's `Γ` is a single ordered sequence that mixes kind variables, type variables, term variables, constraints, and regions. With a separate index space per class, a record of separate components carries the same information:
+The specification's `Γ` is a single ordered sequence that mixes kind variables, type variables, term variables, constraints, and regions. With a separate index space per class, a record of separate components carries the same information (`Stella.Core.Context`):
 
 ```fstar
-noeq type ctx = {
+type ctx = {
   nk      : nat;                    // number of kind variables in scope
   tvars   : list kind;              // type variables; the head is index 0
   facts   : list constr;            // RegionKey ℓ ∉ t facts added by region binders
   assumps : list constr;            // constraints assumed by Λ(_ : C)
-  regions : list (atom & layout);   // opened region names with their cell layouts
+  regions : list (atom & layout);   // every region in scope, with its cell layout
   vars    : list typ;               // term variables; the head is index 0
 }
 ```
 
-`facts` and `assumps` are written over the indices of `tvars`.
+`facts`, `assumps`, the layouts in `regions`, and the types in `vars` are written over the indices of `tvars`. The hypotheses of entailment are `facts` followed by `assumps`.
 
-- **Entering a type binder** (`ETyLam`, `TForall`, the type binders of a clause) pushes onto `tvars` and shifts the type indices in `facts`, `assumps`, and `vars`. A constraint about an outer variable never applies to the new one, because it refers to a different index.
-- **Entering a region** adds the fact `RegionKey ℓ ∉ t` for every `t` in `tvars` of kind `Row Effect`. Row variables bound later, inside the region, get no such fact (spec 02 §Deciding entailment).
-- **Well-formedness** of a context (`wf_ctx`) checks only structure: indices are in scope and kinds agree. Whether the assumptions are consistent is a separate, computable predicate, `inconsistent Γ` (§2.2).
+- **Entering a type binder** (`ETyLam`, `TForall`, the type binders of a clause) pushes onto `tvars` and shifts every type stored in the context. A constraint about an outer variable never applies to the new one, because it refers to a different index.
+- **Entering a region** adds the region with its layout, and adds the fact `RegionKey ℓ ∉ t` for every `t` in `tvars` of kind `Row Effect`. Row variables bound later, inside the region, get no such fact (spec 02 §Deciding entailment).
+- **`regions` holds every region name in scope**, including the run-time names that opening a region allocates (§4.5). This is how the specification's `Γ_R`, which stands in front of every `Γ`, is represented.
+- **Well-formedness** of a context checks only structure. Every kind in `tvars` is a well-formed quantifiable kind, every fact and assumption is a well-formed constraint, and the indices are in scope. Whether the assumptions are consistent is a separate, computable predicate, `inconsistent` (§2.2).
 
 ### 4.3 The join-point context Δ
 
@@ -257,18 +262,18 @@ The syntactic predicate `jp_scoped n e` (`Stella.Core.Value`) holds when every `
 
 ### 4.5 Run-time contexts and the store
 
-Run-time terms are typed under two global contexts besides `Σ` (spec 06 §Run-time forms):
+Run-time terms involve two global contexts besides `Σ` (spec 06 §Run-time forms):
 
 - `Γ_R` maps region atoms to cell layouts. Opening a region extends it.
 - `Γ_N` maps by-need locations to types. `letrec` extends it.
 
-The term typing judgement has the shape
+`Γ_R` is the `regions` component of the context in which a closed run-time term is typed, so extending `Γ_R` is an instance of weakening the context (§4.2). `Γ_N` is a separate parameter of the term typing judgement:
 
 ```
-typing : sig -> rctx -> lctx -> ctx -> jctx -> exp -> typ -> (row:typ) -> Type
+typing : sig -> lctx -> ctx -> jctx -> exp -> typ -> (row:typ) -> Type
 ```
 
-When the typing rule opens a region statically, it uses an atom that occurs neither in `Γ_R` nor in `ctx.regions`. Store typing `⊢ N : Γ_N` is as in spec 06 §Run-time forms.
+When the typing rule opens a region statically, it uses an atom that does not occur in `ctx.regions`. Store typing `⊢ N : Γ_N` is as in spec 06 §Run-time forms.
 
 ## 5. Relation to the specification
 
