@@ -4,13 +4,14 @@
    `L.append`, `L.map` and `flat_*` come first, and `veq` lifts `seteq` to
    row views.
 
-   The three operations `cren`, `csub` and `cmap` share one row argument.
-   For each of them, the view of the image of any form has the members of
-   `rop fe fv` applied to the form's view (`op_view`, established by
-   `cren_op_view`, `csub_op_view` and `cmap_op_view`), and every image is
-   `row_canonical`. From these two facts alone, `ext_case` and `union_case`
-   close the row cases of all three commutation theorems: both sides are
-   row-canonical and their views have the same members.
+   The four operations `cren`, `csub`, `cmap` and `ckinst` share one row
+   argument. For each of them, the view of the image of any form has the
+   members of `rop fe fv` applied to the form's view (`op_view`,
+   established by `cren_op_view`, `csub_op_view`, `cmap_op_view` and
+   `ckinst_op_view`), and every image is `row_canonical`. From these two
+   facts alone, `ext_case` and `union_case` close the row cases of all
+   four commutation theorems: both sides are row-canonical and their views
+   have the same members.
 
    The substitution theorem lifts `s` under a binder with `cren`, so it
    uses the renaming theorem at the substitutes; renaming is therefore
@@ -276,6 +277,32 @@ let row_canonical_cmap f c =
   | CRow es ts -> row_canonical_nrow (L.append (cmap_ents f es) (flat_es (cmap_views f ts)))
                    (flat_ts (cmap_views f ts))
   | _ -> row_canonical_nonrow (cmap f c)
+
+let rec ckinst_maps (ks: list kind) (es: list centry) (ts: list ctyp)
+  : Lemma (ensures ckinst_ents ks es == L.map (ckinst_ent ks) es /\
+                   ckinst_views ks ts == L.map (ckinst_vf ks) ts)
+          (decreases %[es; ts]) =
+  match es, ts with
+  | [], [] -> ()
+  | _ :: es', _ -> ckinst_maps ks es' ts
+  | [], _ :: ts' -> ckinst_maps ks [] ts'
+
+let ckinst_op_view (ks: list kind) (c: ctyp)
+  : Lemma (op_view (ckinst_ent ks) (ckinst_vf ks) c (ckinst ks c)) =
+  match c with
+  | CRow es ts ->
+    ckinst_maps ks es ts;
+    let v = rop (ckinst_ent ks) (ckinst_vf ks) (es, ts) in
+    view_nrow_veq (fst v) (snd v)
+  | _ -> rop_single (ckinst_ent ks) (ckinst_vf ks) c
+
+let ckinst_view ks c = ckinst_op_view ks c
+
+let row_canonical_ckinst ks c =
+  match c with
+  | CRow es ts -> row_canonical_nrow (L.append (ckinst_ents ks es) (flat_es (ckinst_views ks ts)))
+                   (flat_ts (ckinst_views ks ts))
+  | _ -> row_canonical_nonrow (ckinst ks c)
 
 let canon_row_canonical t =
   match t with
@@ -620,6 +647,51 @@ let canon_open_region d a t = canon_rmap (open_rr a d) t
 
 let canon_close_region d a t = canon_rmap (close_rr a d) t
 
+let rec canon_kinst (ks: list kind) (t: typ)
+  : Lemma (ensures canon (kinst_ty ks t) == ckinst ks (canon t)) (decreases t) =
+  match t with
+  | TVar _ | TCon _ _ | TRowEmpty -> ()
+  | TApp a b -> canon_kinst ks a; canon_kinst ks b
+  | TForall _ a -> canon_kinst ks a
+  | TConstr cn a -> canon_kinst_constr ks cn; canon_kinst ks a
+  | TRowExt en r ->
+    canon_kinst_ent ks en;
+    canon_kinst ks r;
+    ckinst_op_view ks (canon r);
+    ckinst_op_view ks (canon t);
+    row_canonical_ckinst ks (canon t);
+    ext_case (ckinst_ent ks) (ckinst_vf ks) (canon_ent en) (canon r) (ckinst ks (canon r))
+      (ckinst ks (canon t))
+  | TRowUnion a b ->
+    canon_kinst ks a;
+    canon_kinst ks b;
+    ckinst_op_view ks (canon a);
+    ckinst_op_view ks (canon b);
+    ckinst_op_view ks (canon t);
+    row_canonical_ckinst ks (canon t);
+    union_case (ckinst_ent ks) (ckinst_vf ks) (canon a) (canon b) (ckinst ks (canon a))
+      (ckinst ks (canon b)) (ckinst ks (canon t))
+
+and canon_kinst_ent (ks: list kind) (en: entry)
+  : Lemma (ensures canon_ent (kinst_ent ks en) == ckinst_ent ks (canon_ent en)) (decreases en) =
+  match en with
+  | EntTy _ t -> canon_kinst ks t
+  | EntEff _ _ ts -> canon_kinst_tys ks ts
+  | EntRegion _ -> ()
+
+and canon_kinst_constr (ks: list kind) (cn: constr)
+  : Lemma (ensures canon_constr (kinst_constr ks cn) == ckinst_constr ks (canon_constr cn))
+          (decreases cn) =
+  match cn with
+  | CLacks _ t -> canon_kinst ks t
+  | CDisj a b -> canon_kinst ks a; canon_kinst ks b
+
+and canon_kinst_tys (ks: list kind) (ts: list typ)
+  : Lemma (ensures canon_tys (kinst_tys ks ts) == ckinst_list ks (canon_tys ts)) (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: ts -> canon_kinst ks t; canon_kinst_tys ks ts
+
 (* `canon ∘ σ`, named so that both sides of a corollary use one term. *)
 let canon_tsub (sigma: tsub) (i: nat) : ctyp = canon (sigma i)
 
@@ -646,6 +718,10 @@ let constr_eq_sub_cong sigma sigma' c c' =
 let ty_eq_rmap f t t' = canon_rmap f t; canon_rmap f t'
 
 let constr_eq_rmap f c c' = canon_rmap_constr f c; canon_rmap_constr f c'
+
+let ty_eq_kinst ks t t' = canon_kinst ks t; canon_kinst ks t'
+
+let constr_eq_kinst ks c c' = canon_kinst_constr ks c; canon_kinst_constr ks c'
 
 let ty_eq_open_region d a t t' = ty_eq_rmap (open_rr a d) t t'
 

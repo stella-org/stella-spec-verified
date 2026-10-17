@@ -73,6 +73,11 @@ let rec push_tvars (g: ctx) (ks: list kind) : Tot ctx (decreases ks) =
 (** Assuming a constraint. Satisfiability is not required (design §2.2). *)
 let add_assump (g: ctx) (c: constr) : ctx = { g with assumps = c :: g.assumps }
 
+(** Assuming several constraints at once; `add_assump g c` is
+    `add_assumps g [c]`, and nested `add_assump`s are one `add_assumps`
+    with the last constraint first. *)
+let add_assumps (g: ctx) (cs: list constr) : ctx = { g with assumps = L.append cs g.assumps }
+
 (** Binding a term variable. *)
 let push_var (g: ctx) (t: typ) : ctx = { g with vars = t :: g.vars }
 
@@ -94,3 +99,113 @@ let enter_region (g: ctx) (a: atom) (l: layout) : ctx =
   { g with
     facts = L.append (region_facts a 0 g.tvars) g.facts;
     regions = (a, l) :: g.regions }
+
+(** * Mapping the types stored in a context
+
+    Each map applies one operation to every type the context stores: the
+    facts, the assumptions, the layouts in `regions`, and the term
+    variables. It keeps the region names, so it preserves the region domain
+    `rdom`. `ren_ctx_types` and `sub_ctx_types` keep `nk` and `tvars`,
+    which the caller sets; `kinst_ctx ks nk` also instantiates the kinds of
+    `tvars`, and takes the new `nk` from the caller. *)
+
+(** A substitution applied to the layout of a region. *)
+let sub_region (sigma: tsub) (r: atom & layout) : atom & layout = (fst r, sub_layout sigma (snd r))
+
+(** A kind instantiation applied to the layout of a region. *)
+let kinst_region (ks: list kind) (r: atom & layout) : atom & layout =
+  (fst r, kinst_layout ks (snd r))
+
+let ren_ctx_types (xi: ren) (g: ctx) : ctx =
+  { g with
+    facts = L.map (ren_constr xi) g.facts;
+    assumps = L.map (ren_constr xi) g.assumps;
+    regions = L.map (ren_region xi) g.regions;
+    vars = L.map (ren_ty xi) g.vars }
+
+let sub_ctx_types (sigma: tsub) (g: ctx) : ctx =
+  { g with
+    facts = L.map (sub_constr sigma) g.facts;
+    assumps = L.map (sub_constr sigma) g.assumps;
+    regions = L.map (sub_region sigma) g.regions;
+    vars = L.map (sub_ty sigma) g.vars }
+
+let kinst_ctx (ks: list kind) (nk: nat) (g: ctx) : ctx =
+  { nk = nk;
+    tvars = kinst_kinds ks g.tvars;
+    facts = L.map (kinst_constr ks) g.facts;
+    assumps = L.map (kinst_constr ks) g.assumps;
+    regions = L.map (kinst_region ks) g.regions;
+    vars = L.map (kinst_ty ks) g.vars }
+
+(** * The region domain
+
+    Every map of the stored types, entering a type binder, and assuming a
+    constraint keep the region domain; entering a region adds its atom. *)
+
+val rdom_ren_ctx_types (xi: ren) (g: ctx) : Lemma (rdom (ren_ctx_types xi g) == rdom g)
+
+val rdom_sub_ctx_types (sigma: tsub) (g: ctx) : Lemma (rdom (sub_ctx_types sigma g) == rdom g)
+
+val rdom_kinst_ctx (ks: list kind) (nk: nat) (g: ctx) : Lemma (rdom (kinst_ctx ks nk g) == rdom g)
+
+val rdom_push_tvar (g: ctx) (k: kind) : Lemma (rdom (push_tvar g k) == rdom g)
+
+val rdom_add_assumps (g: ctx) (cs: list constr) : Lemma (rdom (add_assumps g cs) == rdom g)
+
+val rdom_add_assump (g: ctx) (c: constr) : Lemma (rdom (add_assump g c) == rdom g)
+
+val rdom_enter_region (g: ctx) (a: atom) (l: layout)
+  : Lemma (rdom (enter_region g a l) == a :: rdom g)
+
+(** * The hypotheses *)
+
+val hyps_ren_ctx_types (xi: ren) (g: ctx)
+  : Lemma (hyps (ren_ctx_types xi g) == L.map (ren_constr xi) (hyps g))
+
+val hyps_sub_ctx_types (sigma: tsub) (g: ctx)
+  : Lemma (hyps (sub_ctx_types sigma g) == L.map (sub_constr sigma) (hyps g))
+
+val hyps_kinst_ctx (ks: list kind) (nk: nat) (g: ctx)
+  : Lemma (hyps (kinst_ctx ks nk g) == L.map (kinst_constr ks) (hyps g))
+
+(** The hypotheses under a type binder are the shifted ones. *)
+val hyps_push_tvar (g: ctx) (k: kind)
+  : Lemma (hyps (push_tvar g k) == L.map (ren_constr (shift 1)) (hyps g))
+
+val mem_hyps_add_assumps (g: ctx) (cs: list constr) (h: constr)
+  : Lemma (L.mem h (hyps (add_assumps g cs)) <==> L.mem h cs \/ L.mem h (hyps g))
+
+(** * Relation to entering a binder and assuming a constraint *)
+
+(** Entering a type binder is renaming the stored types by `↑1`. *)
+val push_tvar_ren (g: ctx) (k: kind)
+  : Lemma (push_tvar g k == { ren_ctx_types (shift 1) g with tvars = k :: g.tvars })
+
+val add_assump_assumps (g: ctx) (c: constr) : Lemma (add_assump g c == add_assumps g [c])
+
+val ren_ctx_types_push_tvar (xi: ren) (g: ctx) (k: kind)
+  : Lemma (ren_ctx_types (up_ren xi) (push_tvar g k) == push_tvar (ren_ctx_types xi g) k)
+
+val sub_ctx_types_push_tvar (sigma: tsub) (g: ctx) (k: kind)
+  : Lemma (sub_ctx_types (up_tsub sigma) (push_tvar g k) == push_tvar (sub_ctx_types sigma g) k)
+
+val kinst_ctx_push_tvar (ks: list kind) (nk: nat) (g: ctx) (k: kind)
+  : Lemma (kinst_ctx ks nk (push_tvar g k) == push_tvar (kinst_ctx ks nk g) (kinst_kind ks k))
+
+val ren_ctx_types_add_assumps (xi: ren) (g: ctx) (cs: list constr)
+  : Lemma (ren_ctx_types xi (add_assumps g cs) ==
+           add_assumps (ren_ctx_types xi g) (L.map (ren_constr xi) cs))
+
+val sub_ctx_types_add_assumps (sigma: tsub) (g: ctx) (cs: list constr)
+  : Lemma (sub_ctx_types sigma (add_assumps g cs) ==
+           add_assumps (sub_ctx_types sigma g) (L.map (sub_constr sigma) cs))
+
+val kinst_ctx_add_assumps (ks: list kind) (nk: nat) (g: ctx) (cs: list constr)
+  : Lemma (kinst_ctx ks nk (add_assumps g cs) ==
+           add_assumps (kinst_ctx ks nk g) (L.map (kinst_constr ks) cs))
+
+(** Instantiating the variable a type binder pushed gives back the stored
+    types of the outer context. *)
+val sub1_push_tvar (s: typ) (g: ctx) (k: kind)
+  : Lemma ({ sub_ctx_types (scons s tvar) (push_tvar g k) with tvars = g.tvars } == g)

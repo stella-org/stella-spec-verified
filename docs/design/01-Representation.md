@@ -55,7 +55,7 @@ Types bind no region names. The typing judgement opens a region body with an ato
 
 The typing rule for `region` uses **cofinite quantification**: the body must typecheck when opened with every atom outside some finite set. In F*, this is a constructor field of function type `(l:atom{l ∉ L}) -> typing …`, which is strictly positive. With this rule, weakening needs no lemma about renaming atoms.
 
-## 2. Type equality
+## 2. Type equality, constraints, and kinding
 
 Type equality is equality of canonical forms:
 
@@ -137,9 +137,31 @@ The syntactic renaming and substitution operations know nothing about consistenc
 7. entailment is preserved by adding hypotheses (weakening);
 8. entailment is preserved by a region map that is injective on the keys of the entailed constraint. In particular, it is preserved by opening a region with an atom that does not occur in the entailed constraint, whatever the hypotheses are. Without that condition the lemma fails, because a region map can merge two keys: opening `RegionKey (RBound 0) ∉ ( RegionKey (RFree a) | r )` with `a` gives an inconsistent constraint.
 
-The substitution lemma of the typing relation does need a kind-correct, well-scoped substitution that is locally closed for regions. Entailment alone needs none of these.
+The substitution lemmas of kinding and typing do need a kind-correct, well-scoped substitution, the `sub_ok` condition of §2.3, and the typing lemma also needs it to be locally closed for regions. Entailment alone needs none of these.
 
 Together these give preservation for `(Λ(_ : C). v) [•] → v`, and type application needs no side condition. Progress is unaffected: evaluation runs on closed terms, whose empty context is consistent, and enters the body of a `Λ(_ : C)` only after the matching `[•]`.
+
+### 2.3 Kinding
+
+Kinding is a pair of total, mutually recursive functions (`Stella.Core.Kinding`):
+
+- `synth_kind` synthesizes the kind of a variable, a constructor, an application, a `forall`, or a constrained type;
+- `check` checks a type against a given kind.
+
+The row formers are only checked, because `()` has kind `Row Type` and `Row Effect` alike, so its kind cannot be synthesized. A type kinded `Row ε` is therefore row syntax or a row variable, never a constructor application, provided that every type constructor's kind and every type variable's kind is quantifiable (§4.1, §4.2).
+
+Entailment is consulted in exactly two places: the sharpness premise of row extension (`key(ent) ∉ ρ`) and that of row union (`ρ1 # ρ2`). These are the only premises that an inconsistent context makes trivially true (§2.2). A constrained type `C => τ` checks that `C` is well formed and kinds `τ` with `C` added to the assumptions.
+
+Kinding is preserved by context morphisms:
+
+- A **renaming** `ξ` from `Γ` to `Γ'` (`ren_ok`) sends each type variable to one of the same kind. The image of each hypothesis of `Γ` must be entailed by the hypotheses of `Γ'`, and the regions of `Γ` must be in scope in `Γ'`.
+- A **substitution** `σ` (`sub_ok`) has the same shape, except that each `σ i` is checked at the kind of `i`.
+
+Because the hypothesis condition is entailment rather than membership, one lemma covers renaming, weakening (adding type variables, assumptions, facts, or regions), and cut. Under a binder, `σ` is lifted and the binder's assumptions are carried over as substituted assumptions without being discharged. A separate cut step discharges them where they are entailed.
+
+A substitution preserves `check` but not the synthesized kind. Substituting row syntax such as `()` for a row variable turns a type whose kind is synthesized into one that can only be checked. So an argument that inverts a kinding derivation after a substitution has to go through `check`.
+
+Kind instantiation `kinst ks` preserves kinding when every `ks` is a well-formed quantifiable kind and `Σ` is well formed. In a well-formed `Σ`, the kind of a type constructor is closed under its own kind variables, and the parameters of an effect mention no kind variable.
 
 ## 3. Syntax
 
@@ -238,7 +260,7 @@ type ctx = {
 
 `facts`, `assumps`, the layouts in `regions`, and the types in `vars` are written over the indices of `tvars`. The hypotheses of entailment are `facts` followed by `assumps`.
 
-- **Entering a type binder** (`ETyLam`, `TForall`, the type binders of a clause) pushes onto `tvars` and shifts every type stored in the context. A constraint about an outer variable never applies to the new one, because it refers to a different index.
+- **Entering a type binder** (`ETyLam`, `TForall`, the type binders of a clause) pushes onto `tvars` and shifts every type stored in the context. A constraint about an outer variable never applies to the new one, because it refers to a different index. Renaming, substitution, and kind instantiation of a context act on the same stored types, the layouts in `regions` included, and leave the set of region names unchanged.
 - **Entering a region** adds the region with its layout, and adds the fact `RegionKey ℓ ∉ t` for every `t` in `tvars` of kind `Row Effect`. Row variables bound later, inside the region, get no such fact (spec 02 §Deciding entailment).
 - **`regions` holds every region name in scope**, including the run-time names that opening a region allocates (§4.5). This is how the specification's `Γ_R`, which stands in front of every `Γ`, is represented.
 - **Well-formedness** of a context checks only structure. Every kind in `tvars` is a well-formed quantifiable kind, every fact and assumption is a well-formed constraint, and the indices are in scope. Whether the assumptions are consistent is a separate, computable predicate, `inconsistent` (§2.2).

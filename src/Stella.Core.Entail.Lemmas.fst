@@ -29,7 +29,13 @@
    (`cmap_atoms`), and every atom of the image of `c` is the image of an
    atom of `c` (`rcover`). Only consistency of the image of `c` needs
    injectivity (`cmap_consistent`): an inconsistent image of a hypothesis
-   is ex falso. *)
+   is ex falso.
+
+   Kind instantiation is the same argument with the keys left unchanged,
+   so consistency is preserved and reflected (`ckinst_consistent`).
+
+   Cut of a list removes the hypotheses one at a time: each is entailed by
+   the rest together with `hyps'`, by weakening. *)
 module Stella.Core.Entail.Lemmas
 open Stella.Core.Syntax
 open Stella.Core.Subst
@@ -861,6 +867,144 @@ let entails_open_region d a hyps c =
   assert (rmap_injective_on f (cc_keys (canon_constr c)));
   entails_rmap f hyps c
 
+(* Kind instantiation. As for region maps, each tail `t` of a canonical
+   form has the single image `ckinst ks t`; the keys are unchanged. *)
+
+let ckinst_nonrow (ks: list kind) (t: ctyp)
+  : Lemma (requires not (CRow? t)) (ensures not (CRow? (ckinst ks t))) = ()
+
+let rec vkeys_nonrow_k (ks: list kind) (k: key) (ts: list ctyp)
+  : Lemma (requires forall (t: ctyp). L.mem t ts ==> not (CRow? t))
+          (ensures not (vkeys (ckinst_vf ks) k ts)) (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: tl -> ckinst_nonrow ks t; vkeys_nonrow_k ks k tl
+
+let rec vtails_nonrow_k (ks: list kind) (t': ctyp) (ts: list ctyp)
+  : Lemma (requires forall (t: ctyp). L.mem t ts ==> not (CRow? t))
+          (ensures vtails (ckinst_vf ks) t' ts = L.mem t' (L.map (ckinst ks) ts)) (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: tl -> ckinst_nonrow ks t; vtails_nonrow_k ks t' tl
+
+let rec keys_of_ckinst_ents (ks: list kind) (es: list centry)
+  : Lemma (ensures keys_of (L.map (ckinst_ent ks) es) == keys_of es) (decreases es) =
+  match es with
+  | [] -> ()
+  | _ :: tl -> keys_of_ckinst_ents ks tl
+
+let ckinst_keys (ks: list kind) (c: ctyp) (k: key)
+  : Lemma (requires nonrow_tails c) (ensures L.mem k (ckeys (ckinst ks c)) = L.mem k (ckeys c)) =
+  ckinst_view ks c;
+  let v = view_row c in
+  let es = L.append (L.map (ckinst_ent ks) (fst v)) (flat_es (L.map (ckinst_vf ks) (snd v))) in
+  keys_of_seteq k (row_entries (ckinst ks c)) es;
+  keys_of_append (L.map (ckinst_ent ks) (fst v)) (flat_es (L.map (ckinst_vf ks) (snd v)));
+  keys_of_ckinst_ents ks (fst v);
+  mem_keys_flat (ckinst_vf ks) k (snd v);
+  vkeys_nonrow_k ks k (snd v)
+
+let ckinst_tails (ks: list kind) (c: ctyp) (t': ctyp)
+  : Lemma (requires nonrow_tails c)
+          (ensures L.mem t' (row_tails (ckinst ks c)) = L.mem t' (L.map (ckinst ks) (row_tails c))) =
+  ckinst_view ks c;
+  mem_tails_flat (ckinst_vf ks) t' (row_tails c);
+  vtails_nonrow_k ks t' (row_tails c)
+
+let ktails_up (ks: list kind) (c t: ctyp)
+  : Lemma (requires nonrow_tails c /\ L.mem t (row_tails c))
+          (ensures L.mem (ckinst ks t) (row_tails (ckinst ks c))) =
+  mem_map (ckinst ks) (row_tails c) t;
+  ckinst_tails ks c (ckinst ks t)
+
+let ktails_down (ks: list kind) (c: ctyp) (t': ctyp)
+  : Pure ctyp (requires nonrow_tails c /\ L.mem t' (row_tails (ckinst ks c)))
+              (ensures fun t -> L.mem t (row_tails c) /\ ckinst ks t == t') =
+  ckinst_tails ks c t';
+  map_wit (ckinst ks) (row_tails c) t'
+
+let akinst (ks: list kind) (a: afact) : afact =
+  match a with
+  | ALacks k t -> ALacks k (ckinst ks t)
+  | ADisj t1 t2 -> ADisj (ckinst ks t1) (ckinst ks t2)
+
+let ckinst_consistent (ks: list kind) (cc: cconstr)
+  : Lemma (requires cc_nonrow cc) (ensures cconsistent (ckinst_constr ks cc) = cconsistent cc) =
+  match cc with
+  | CCLacks k c -> ckinst_keys ks c k
+  | CCDisj c1 c2 ->
+    FStar.Classical.forall_intro (ckinst_keys ks c1);
+    FStar.Classical.forall_intro (ckinst_keys ks c2);
+    disjoint_keys_mem (ckeys c1) (ckeys c2);
+    disjoint_keys_mem (ckeys (ckinst ks c1)) (ckeys (ckinst ks c2))
+
+let ckinst_atoms (ks: list kind) (cc: cconstr) (a: afact)
+  : Lemma (requires cc_nonrow cc /\ in_atoms cc a)
+          (ensures in_atoms (ckinst_constr ks cc) (akinst ks a)) =
+  match cc, a with
+  | CCLacks k c, ALacks _ t -> ktails_up ks c t
+  | CCDisj c1 c2, ALacks k t ->
+    ckinst_keys ks c1 k;
+    ckinst_keys ks c2 k;
+    if L.mem k (ckeys c1) && L.mem t (row_tails c2) then ktails_up ks c2 t
+    else ktails_up ks c1 t
+  | CCDisj c1 c2, ADisj t1 t2 -> ktails_up ks c1 t1; ktails_up ks c2 t2
+
+(* The atom of `cc` whose image is a given atom of `ckinst_constr ks cc`. *)
+let kcover (ks: list kind) (cc: cconstr) (b: afact)
+  : Pure afact (requires cc_nonrow cc /\ in_atoms (ckinst_constr ks cc) b)
+               (ensures fun a -> in_atoms cc a /\ akinst ks a == b) =
+  match cc, b with
+  | CCLacks k c, ALacks _ t' -> ALacks k (ktails_down ks c t')
+  | CCDisj c1 c2, ALacks k t' ->
+    ckinst_keys ks c1 k;
+    ckinst_keys ks c2 k;
+    if L.mem k (ckeys (ckinst ks c1)) && L.mem t' (row_tails (ckinst ks c2)) then
+      ALacks k (ktails_down ks c2 t')
+    else ALacks k (ktails_down ks c1 t')
+  | CCDisj c1 c2, ADisj x y -> ADisj (ktails_down ks c1 x) (ktails_down ks c2 y)
+
+let gs_kinst (ks: list kind) (hyps: list constr) (a: afact)
+  : Lemma (requires L.mem a (gamma_star hyps))
+          (ensures L.mem (akinst ks a) (gamma_star (L.map (kinst_constr ks) hyps))) =
+  let hyps' = L.map (kinst_constr ks) hyps in
+  let h = gs_source hyps a in
+  let h' = kinst_constr ks h in
+  mem_map (kinst_constr ks) hyps h;
+  canon_kinst_constr ks h;
+  canon_cc_nonrow h;
+  ckinst_consistent ks (canon_constr h);
+  ckinst_atoms ks (canon_constr h) a;
+  gs_intro hyps' h' (akinst ks a)
+
+let derivable_kinst (ks: list kind) (hyps: list constr) (a: afact)
+  : Lemma (requires derivable hyps a)
+          (ensures derivable (L.map (kinst_constr ks) hyps) (akinst ks a)) =
+  if L.mem a (gamma_star hyps) then gs_kinst ks hyps a else gs_kinst ks hyps (flip a)
+
+let entails_kinst ks hyps c =
+  let hyps' = L.map (kinst_constr ks) hyps in
+  if inconsistent hyps then begin
+    let h = inconsistent_wit hyps in
+    canon_kinst_constr ks h;
+    canon_cc_nonrow h;
+    ckinst_consistent ks (canon_constr h);
+    mem_map (kinst_constr ks) hyps h;
+    inconsistent_intro hyps' (kinst_constr ks h)
+  end else begin
+    let cc = canon_constr c in
+    canon_kinst_constr ks c;
+    canon_cc_nonrow c;
+    entails_elim hyps c;
+    ckinst_consistent ks cc;
+    let aux (b: afact)
+      : Lemma (requires in_atoms (ckinst_constr ks cc) b) (ensures derivable hyps' b) =
+      derivable_kinst ks hyps (kcover ks cc b)
+    in
+    FStar.Classical.forall_intro (FStar.Classical.move_requires aux);
+    entails_intro hyps' (kinst_constr ks c)
+  end
+
 (* Weakening, consistency preservation, and cut. *)
 
 let entails_weaken hyps hyps' c =
@@ -887,3 +1031,18 @@ let entails_cut hyps c d =
     entails_elim (c :: hyps) d;
     entails_intro hyps d
   end
+
+let rec cut_prefix (l hyps': list constr) (c: constr)
+  : Lemma (requires (forall (h: constr). L.mem h l ==> entails hyps' h) /\
+                    entails (L.append l hyps') c)
+          (ensures entails hyps' c) (decreases l) =
+  match l with
+  | [] -> ()
+  | h :: tl ->
+    entails_weaken hyps' (L.append tl hyps') h;
+    entails_cut (L.append tl hyps') h c;
+    cut_prefix tl hyps' c
+
+let entails_cut_all hyps hyps' c =
+  entails_weaken hyps (L.append hyps hyps') c;
+  cut_prefix hyps hyps' c

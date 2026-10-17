@@ -30,10 +30,11 @@
  *
  * ## Operations on canonical forms
  *
- * Renaming (`cren`), substitution (`csub`) and maps over region references
- * (`cmap`) act on canonical forms and re-normalize every row they rebuild,
- * since they may merge entries or tails. `Stella.Core.Rows.Lemmas` proves
- * that `canon` commutes with each of them.
+ * Renaming (`cren`), substitution (`csub`), maps over region references
+ * (`cmap`) and kind instantiation (`ckinst`) act on canonical forms and
+ * re-normalize every row they rebuild, since they may merge entries or
+ * tails. `Stella.Core.Rows.Lemmas` proves that `canon` commutes with each
+ * of them.
  *)
 module Stella.Core.Rows
 open Stella.Core.Syntax
@@ -437,6 +438,51 @@ and cmap_constr (f: region_ref -> region_ref) (cc: cconstr) : Tot cconstr (decre
   | CCDisj a b -> CCDisj (cmap f a) (cmap f b)
 
 let cmap_vf (f: region_ref -> region_ref) (t: ctyp) : rview = view_row (cmap f t)
+
+(** * Kind instantiation
+
+    `ckinst ks` instantiates the kinds of constructors and quantifiers, as
+    `kinst_ty` does on types. Keys and region payloads hold no kinds. *)
+let rec ckinst (ks: list kind) (c: ctyp) : Tot ctyp (decreases c) =
+  match c with
+  | CVar _ -> c
+  | CCon q kl -> CCon q (kinst_kinds ks kl)
+  | CApp a b -> CApp (ckinst ks a) (ckinst ks b)
+  | CForall k a -> CForall (kinst_kind ks k) (ckinst ks a)
+  | CConstr cc a -> CConstr (ckinst_constr ks cc) (ckinst ks a)
+  | CRow es ts -> build (ckinst_ents ks es) (ckinst_views ks ts)
+
+and ckinst_pay (ks: list kind) (p: cpayload) : Tot cpayload (decreases p) =
+  match p with
+  | PTy c -> PTy (ckinst ks c)
+  | PEff q cs -> PEff q (ckinst_list ks cs)
+  | PRegion _ -> p
+
+and ckinst_ent (ks: list kind) (e: centry) : Tot centry (decreases e) =
+  match e with
+  | (k, p) -> (k, ckinst_pay ks p)
+
+and ckinst_ents (ks: list kind) (es: list centry) : Tot (list centry) (decreases es) =
+  match es with
+  | [] -> []
+  | e :: es -> ckinst_ent ks e :: ckinst_ents ks es
+
+and ckinst_views (ks: list kind) (ts: list ctyp) : Tot (list rview) (decreases ts) =
+  match ts with
+  | [] -> []
+  | t :: ts -> view_row (ckinst ks t) :: ckinst_views ks ts
+
+and ckinst_list (ks: list kind) (cs: list ctyp) : Tot (list ctyp) (decreases cs) =
+  match cs with
+  | [] -> []
+  | c :: cs -> ckinst ks c :: ckinst_list ks cs
+
+and ckinst_constr (ks: list kind) (cc: cconstr) : Tot cconstr (decreases cc) =
+  match cc with
+  | CCLacks k c -> CCLacks k (ckinst ks c)
+  | CCDisj a b -> CCDisj (ckinst ks a) (ckinst ks b)
+
+let ckinst_vf (ks: list kind) (t: ctyp) : rview = view_row (ckinst ks t)
 
 (** * Local closure of canonical forms
 

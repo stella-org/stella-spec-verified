@@ -127,6 +127,94 @@ and kinst_cls_nil (cs: list clause) : Lemma (ensures kinst_cls [] cs == cs) (dec
   | CFull _ _ s kt b :: cs -> kinst_ty_nil s; kinst_ty_nil kt; kinst_exp_nil b; kinst_cls_nil cs
   | CFast _ _ s b :: cs -> kinst_ty_nil s; kinst_exp_nil b; kinst_cls_nil cs
 
+let rec kinst_ren_ty (ks: list kind) (xi: ren) (t: typ)
+  : Lemma (ensures kinst_ty ks (ren_ty xi t) == ren_ty xi (kinst_ty ks t)) (decreases t) =
+  match t with
+  | TVar _ | TCon _ _ | TRowEmpty -> ()
+  | TApp t1 t2 | TRowUnion t1 t2 -> kinst_ren_ty ks xi t1; kinst_ren_ty ks xi t2
+  | TForall _ t -> kinst_ren_ty ks (up_ren xi) t
+  | TConstr cn t -> kinst_ren_constr ks xi cn; kinst_ren_ty ks xi t
+  | TRowExt en t -> kinst_ren_ent ks xi en; kinst_ren_ty ks xi t
+
+and kinst_ren_ent (ks: list kind) (xi: ren) (en: entry)
+  : Lemma (ensures kinst_ent ks (ren_ent xi en) == ren_ent xi (kinst_ent ks en)) (decreases en) =
+  match en with
+  | EntTy _ t -> kinst_ren_ty ks xi t
+  | EntEff _ _ ts -> kinst_ren_tys ks xi ts
+  | EntRegion _ -> ()
+
+and kinst_ren_constr (ks: list kind) (xi: ren) (cn: constr)
+  : Lemma (ensures kinst_constr ks (ren_constr xi cn) == ren_constr xi (kinst_constr ks cn))
+          (decreases cn) =
+  match cn with
+  | CLacks _ t -> kinst_ren_ty ks xi t
+  | CDisj t1 t2 -> kinst_ren_ty ks xi t1; kinst_ren_ty ks xi t2
+
+and kinst_ren_tys (ks: list kind) (xi: ren) (ts: list typ)
+  : Lemma (ensures kinst_tys ks (ren_tys xi ts) == ren_tys xi (kinst_tys ks ts)) (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: ts -> kinst_ren_ty ks xi t; kinst_ren_tys ks xi ts
+
+let rec kinst_ren_layout (ks: list kind) (xi: ren) (l: list (key & typ))
+  : Lemma (ensures kinst_layout ks (ren_layout xi l) == ren_layout xi (kinst_layout ks l))
+          (decreases l) =
+  match l with
+  | [] -> ()
+  | (_, t) :: l -> kinst_ren_ty ks xi t; kinst_ren_layout ks xi l
+
+(* Lifting keeps the agreement of `θ` with `σ >> kinst_ty ks`, a shifted
+   substitute commuting with `kinst_ty ks` by `kinst_ren_ty`. *)
+let upn_kinst_sub (n: nat) (ks: list kind) (sigma theta: tsub)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures forall (i: nat). upn_tsub n theta i == kinst_ty ks (upn_tsub n sigma i)) =
+  introduce forall (i: nat). upn_tsub n theta i == kinst_ty ks (upn_tsub n sigma i)
+  with if i < n then () else kinst_ren_ty ks (shift n) (sigma (i - n))
+
+let rec kinst_sub_ty (ks: list kind) (sigma theta: tsub) (t: typ)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_ty ks (sub_ty sigma t) == sub_ty theta (kinst_ty ks t)) (decreases t) =
+  match t with
+  | TVar _ | TCon _ _ | TRowEmpty -> ()
+  | TApp t1 t2 | TRowUnion t1 t2 -> kinst_sub_ty ks sigma theta t1; kinst_sub_ty ks sigma theta t2
+  | TForall _ t ->
+    upn_kinst_sub 1 ks sigma theta; kinst_sub_ty ks (up_tsub sigma) (up_tsub theta) t
+  | TConstr cn t -> kinst_sub_constr ks sigma theta cn; kinst_sub_ty ks sigma theta t
+  | TRowExt en t -> kinst_sub_ent ks sigma theta en; kinst_sub_ty ks sigma theta t
+
+and kinst_sub_ent (ks: list kind) (sigma theta: tsub) (en: entry)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_ent ks (sub_ent sigma en) == sub_ent theta (kinst_ent ks en))
+          (decreases en) =
+  match en with
+  | EntTy _ t -> kinst_sub_ty ks sigma theta t
+  | EntEff _ _ ts -> kinst_sub_tys ks sigma theta ts
+  | EntRegion _ -> ()
+
+and kinst_sub_constr (ks: list kind) (sigma theta: tsub) (cn: constr)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_constr ks (sub_constr sigma cn) == sub_constr theta (kinst_constr ks cn))
+          (decreases cn) =
+  match cn with
+  | CLacks _ t -> kinst_sub_ty ks sigma theta t
+  | CDisj t1 t2 -> kinst_sub_ty ks sigma theta t1; kinst_sub_ty ks sigma theta t2
+
+and kinst_sub_tys (ks: list kind) (sigma theta: tsub) (ts: list typ)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_tys ks (sub_tys sigma ts) == sub_tys theta (kinst_tys ks ts))
+          (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: ts -> kinst_sub_ty ks sigma theta t; kinst_sub_tys ks sigma theta ts
+
+let rec kinst_sub_layout (ks: list kind) (sigma theta: tsub) (l: list (key & typ))
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_layout ks (sub_layout sigma l) == sub_layout theta (kinst_layout ks l))
+          (decreases l) =
+  match l with
+  | [] -> ()
+  | (_, t) :: l -> kinst_sub_ty ks sigma theta t; kinst_sub_layout ks sigma theta l
+
 let shift_ty_zero (c: nat) (t: typ) : Lemma (shift_ty c 0 t == t) =
   ren_id_ty (shift_from c 0) t
 

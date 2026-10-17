@@ -2,7 +2,7 @@
  * Kinds, keys, row elements, constraints, and the kinding of types
  * (spec 01 §Kinds, §Kinding).
  *
- * Every judgement is a total boolean function (design §2). Kinding is
+ * Every judgement is a total boolean function (design §2.3). Kinding is
  * bidirectional, because `()` has every row kind and so no unique kind:
  *
  *   - `synth_kind sg g τ` computes the kind of a variable, a constructor, an

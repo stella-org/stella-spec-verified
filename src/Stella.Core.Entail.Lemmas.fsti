@@ -10,10 +10,11 @@
  *     and a consistent list of hypotheses over row variables is satisfied
  *     at once by sending every row variable to `()`.
  *   - Entailment is preserved by every substitution and renaming, with no
- *     kinding hypothesis (lemma 3), and by a region map that keeps the keys
- *     of the entailed constraint apart, in particular opening a region with
- *     a fresh atom.
- *   - Weakening, consistency preservation (lemma 6), and cut (lemma 4).
+ *     kinding hypothesis (lemma 3), by every kind instantiation, and by a
+ *     region map that keeps the keys of the entailed constraint apart, in
+ *     particular opening a region with a fresh atom.
+ *   - Weakening, consistency preservation (lemma 6), cut (lemma 4), and cut
+ *     of a list of entailed hypotheses.
  *)
 module Stella.Core.Entail.Lemmas
 open Stella.Core.Syntax
@@ -173,6 +174,15 @@ val entails_open_region (d: nat) (a: atom) (hyps: list constr) (c: constr)
   : Lemma (requires not (L.mem a (frn_constr c)) /\ entails hyps c)
           (ensures entails (L.map (rmap_constr (open_rr a d)) hyps) (rmap_constr (open_rr a d) c))
 
+(** * Preservation under kind instantiation
+
+    Kind instantiation keeps every key and maps each tail to one tail; tails
+    may merge, as under substitution. *)
+
+val entails_kinst (ks: list kind) (hyps: list constr) (c: constr)
+  : Lemma (requires entails hyps c)
+          (ensures entails (L.map (kinst_constr ks) hyps) (kinst_constr ks c))
+
 (** * Weakening, consistency preservation, and cut *)
 
 (** Weakening: more hypotheses entail more. *)
@@ -192,3 +202,9 @@ val entails_consistent (hyps: list constr) (c: constr)
 (** Cut (lemma 4). *)
 val entails_cut (hyps: list constr) (c d: constr)
   : Lemma (requires entails hyps c /\ entails (c :: hyps) d) (ensures entails hyps d)
+
+(** Cut of a list: hypotheses that are each entailed by `hyps'` can be
+    replaced by `hyps'`. *)
+val entails_cut_all (hyps hyps': list constr) (c: constr)
+  : Lemma (requires (forall (h: constr). L.mem h hyps ==> entails hyps' h) /\ entails hyps c)
+          (ensures entails hyps' c)

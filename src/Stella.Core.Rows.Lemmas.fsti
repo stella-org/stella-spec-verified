@@ -9,10 +9,11 @@
  *   - Inversion: type formers that are not rows are compared component by
  *     component.
  *   - `knownKeys` of an extension and of a union.
- *   - Commutation: `canon` commutes with renaming, substitution and maps
- *     over region references, the last covering region open and close.
- *     Hence `ty_eq` is preserved by every renaming, every substitution and
- *     every region map, with no kinding hypothesis.
+ *   - Commutation: `canon` commutes with renaming, substitution, maps
+ *     over region references (covering region open and close) and kind
+ *     instantiation. Hence `ty_eq` is preserved by every renaming, every
+ *     substitution, every region map and every kind instantiation, with no
+ *     kinding hypothesis.
  *   - Local closure: `canon` preserves and reflects `lc_ty_at`.
  *)
 module Stella.Core.Rows.Lemmas
@@ -74,6 +75,12 @@ val cmap_view (f: region_ref -> region_ref) (c: ctyp)
            seteq (row_entries (cmap f c)) (fst v) /\ seteq (row_tails (cmap f c)) (snd v))
 
 val row_canonical_cmap (f: region_ref -> region_ref) (c: ctyp) : Lemma (row_canonical (cmap f c))
+
+val ckinst_view (ks: list kind) (c: ctyp)
+  : Lemma (let v = rop (ckinst_ent ks) (ckinst_vf ks) (view_row c) in
+           seteq (row_entries (ckinst ks c)) (fst v) /\ seteq (row_tails (ckinst ks c)) (snd v))
+
+val row_canonical_ckinst (ks: list kind) (c: ctyp) : Lemma (row_canonical (ckinst ks c))
 
 (** * Shape of canonical forms *)
 
@@ -251,7 +258,21 @@ val canon_open_region (d: nat) (a: atom) (t: typ)
 val canon_close_region (d: nat) (a: atom) (t: typ)
   : Lemma (canon (close_region_ty d a t) == cmap (close_rr a d) (canon t))
 
-(** * Type equality is preserved by renaming, substitution and region maps *)
+(** * Canonicalization commutes with kind instantiation *)
+
+val canon_kinst (ks: list kind) (t: typ) : Lemma (canon (kinst_ty ks t) == ckinst ks (canon t))
+
+val canon_kinst_ent (ks: list kind) (en: entry)
+  : Lemma (canon_ent (kinst_ent ks en) == ckinst_ent ks (canon_ent en))
+
+val canon_kinst_constr (ks: list kind) (cn: constr)
+  : Lemma (canon_constr (kinst_constr ks cn) == ckinst_constr ks (canon_constr cn))
+
+val canon_kinst_tys (ks: list kind) (ts: list typ)
+  : Lemma (canon_tys (kinst_tys ks ts) == ckinst_list ks (canon_tys ts))
+
+(** * Type equality is preserved by renaming, substitution, region maps and
+      kind instantiation *)
 
 val ty_eq_ren (xi: ren) (t t': typ)
   : Lemma (requires ty_eq t t') (ensures ty_eq (ren_ty xi t) (ren_ty xi t'))
@@ -280,6 +301,12 @@ val ty_eq_rmap (f: region_ref -> region_ref) (t t': typ)
 
 val constr_eq_rmap (f: region_ref -> region_ref) (c c': constr)
   : Lemma (requires constr_eq c c') (ensures constr_eq (rmap_constr f c) (rmap_constr f c'))
+
+val ty_eq_kinst (ks: list kind) (t t': typ)
+  : Lemma (requires ty_eq t t') (ensures ty_eq (kinst_ty ks t) (kinst_ty ks t'))
+
+val constr_eq_kinst (ks: list kind) (c c': constr)
+  : Lemma (requires constr_eq c c') (ensures constr_eq (kinst_constr ks c) (kinst_constr ks c'))
 
 val ty_eq_open_region (d: nat) (a: atom) (t t': typ)
   : Lemma (requires ty_eq t t') (ensures ty_eq (open_region_ty d a t) (open_region_ty d a t'))

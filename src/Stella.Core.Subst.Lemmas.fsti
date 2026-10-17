@@ -7,10 +7,13 @@
  *     (`subst c ss (shift c |ss| t) == t`), for types, types in terms and
  *     terms;
  *   - `subst1_*` is the one-element case of `subst_* 0`;
- *   - instantiating with the empty kind vector is the identity.
+ *   - instantiating with the empty kind vector is the identity;
+ *   - kind instantiation commutes with renaming and substitution of type
+ *     variables on types: it changes kinds only, and both leave kinds
+ *     alone.
  *
- * All but the last are corollaries of the σ-calculus laws in
- * `Stella.Core.Subst.Lemmas.Typ`, `.TyExp` and `.Tm`. `kinst_*_nil` is
+ * The shift and substitution facts are corollaries of the σ-calculus laws
+ * in `Stella.Core.Subst.Lemmas.Typ`, `.TyExp` and `.Tm`. `kinst_*_nil` is
  * exported at kinds, at every type class, and at `exp` and `dtree`.
  *)
 module Stella.Core.Subst.Lemmas
@@ -41,6 +44,44 @@ val kinst_layout_nil (l: list (key & typ))
 val kinst_exp_nil (e: exp) : Lemma (ensures kinst_exp [] e == e)
 
 val kinst_dt_nil (dt: dtree) : Lemma (ensures kinst_dt [] dt == dt)
+
+(** * Kind instantiation commutes with renaming and substitution *)
+
+val kinst_ren_ty (ks: list kind) (xi: ren) (t: typ)
+  : Lemma (kinst_ty ks (ren_ty xi t) == ren_ty xi (kinst_ty ks t))
+
+val kinst_ren_ent (ks: list kind) (xi: ren) (en: entry)
+  : Lemma (kinst_ent ks (ren_ent xi en) == ren_ent xi (kinst_ent ks en))
+
+val kinst_ren_constr (ks: list kind) (xi: ren) (cn: constr)
+  : Lemma (kinst_constr ks (ren_constr xi cn) == ren_constr xi (kinst_constr ks cn))
+
+val kinst_ren_tys (ks: list kind) (xi: ren) (ts: list typ)
+  : Lemma (kinst_tys ks (ren_tys xi ts) == ren_tys xi (kinst_tys ks ts))
+
+val kinst_ren_layout (ks: list kind) (xi: ren) (l: list (key & typ))
+  : Lemma (kinst_layout ks (ren_layout xi l) == ren_layout xi (kinst_layout ks l))
+
+(** `θ` is any substitution agreeing pointwise with `σ >> kinst_ty ks`. *)
+val kinst_sub_ty (ks: list kind) (sigma theta: tsub) (t: typ)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_ty ks (sub_ty sigma t) == sub_ty theta (kinst_ty ks t))
+
+val kinst_sub_ent (ks: list kind) (sigma theta: tsub) (en: entry)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_ent ks (sub_ent sigma en) == sub_ent theta (kinst_ent ks en))
+
+val kinst_sub_constr (ks: list kind) (sigma theta: tsub) (cn: constr)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_constr ks (sub_constr sigma cn) == sub_constr theta (kinst_constr ks cn))
+
+val kinst_sub_tys (ks: list kind) (sigma theta: tsub) (ts: list typ)
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_tys ks (sub_tys sigma ts) == sub_tys theta (kinst_tys ks ts))
+
+val kinst_sub_layout (ks: list kind) (sigma theta: tsub) (l: list (key & typ))
+  : Lemma (requires forall (i: nat). theta i == kinst_ty ks (sigma i))
+          (ensures kinst_layout ks (sub_layout sigma l) == sub_layout theta (kinst_layout ks l))
 
 (** * Shift by 0 *)
 

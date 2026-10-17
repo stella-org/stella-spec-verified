@@ -14,6 +14,7 @@
  *)
 module Stella.Core.Kinding.Lemmas
 open Stella.Core.Syntax
+open Stella.Core.Subst
 open Stella.Core.Rows
 open Stella.Core.Entail
 open Stella.Core.Entail.Lemmas
@@ -24,6 +25,10 @@ open Stella.Core.Kinding
 module L = FStar.List.Tot
 
 (** * Row kinds come from row syntax and row variables *)
+
+(** Kind instantiation keeps a kind producing `Type`. *)
+val kinst_result (ks: list kind) (k: kind)
+  : Lemma (requires result k = KType) (ensures result (kinst_kind ks k) = KType)
 
 (** A synthesized kind produces `Type`, unless the type is a variable. *)
 val synth_result (sg: sig) (g: ctx) (t: typ)
