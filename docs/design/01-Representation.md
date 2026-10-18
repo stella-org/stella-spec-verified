@@ -305,7 +305,30 @@ typing : sig -> lctx -> ctx -> jctx -> exp -> typ -> (row:typ) -> Type
 
 When the typing rule opens a region statically, it uses an atom that does not occur in `ctx.regions`. Store typing `⊢ N : Γ_N` is as in spec 06 §Run-time forms.
 
-## 5. Relation to the specification
+## 5. Initialization safety
+
+A recursive group is initialization-safe when each right-hand side, while it is evaluated, reads only members written before it (spec 10). The typing rule of `letrec` has this as a premise, so the judgement is part of the definition of the type system (`Stella.Core.Init`).
+
+- **Sets, not witness maps.** spec 10 maps each member to the set of places where it is read. Those places only make the diagnostics deterministic. Here a read is a relation: `reads_imm … e m` (evaluating `e` reads member `m` before `e` has a value) and `reads_lat … e m` (the value of `e` may read `m` later).
+- **Least fixed points are inductive relations.** spec 10 takes the least fixed point of monotone rules over a group. An inductive definition is such a fixed point by construction, so there is no iteration. The relations are mutually inductive over expressions and decision trees.
+- **Members** are numbered by their written position, 0 being the first. In a local `letrec`, members are the term variables the group binds. In a top-level `rec` group, they are global names.
+- **Environments follow the de Bruijn binders.** Each term variable in scope is one of the following:
+  - a member;
+  - a variable whose value reads nothing later (a λ parameter, a clause binder, anything bound outside the group);
+  - a variable whose value reads what a given expression's value reads later (`let`, a decision tree's `bind`, a member of a nested group);
+  - a join-point parameter, which reads what the arguments of the jumps to that join point read later.
+
+  Each environment entry carries the expression and environment it refers to, so the nested fixed points need no cyclic structure.
+- **Join points are read where they are jumped to.** A jump's argument reaches a parameter of the join point the jump targets. The target is found by comparing the depth of join binders at the jump with the depth at the `letjoin`. This syntactic count agrees with `Δ` on `jp_scoped` terms (§4.3).
+- **Chains of constructors and foreigns.** A chain whose head is a constructor or a foreign builds a value without running what it is given, provided it has no more value arguments than the arrows of the head's declared type. Such a chain does not promote reads from later to now. An over-applied chain is an ordinary application of its saturated prefix.
+- **Run-time forms** have rules as well, because evaluation substitutes `force ν` for the members of an enclosing group into the initializers of a nested one (spec 06 §Recursive bindings):
+  - `match` is read as `case`;
+  - `openEffC` passes reads through;
+  - `force` and `opaque` read nothing;
+  - `fill` is read as `writeCell`;
+  - an open region frame is read as `region`.
+
+## 6. Relation to the specification
 
 This formalization differs from the specification, or fills gaps in it, at the points below.
 
@@ -317,3 +340,4 @@ This formalization differs from the specification, or fills gaps in it, at the p
 | The erased reduction relation `→ᵤ` used by the erasure property is not defined (spec 06 §Erasure). | It is defined before the erasure property is stated. |
 | The decision-tree form `fail` stands for `leaf (perform Partial.abort [τ] Prim.Unit)`, but the tree grammar does not write `τ` (spec 04 §Decision trees). | The result type is an explicit argument of `fail` (§3). |
 | The specification writes a global applied to arguments in two ways: as an application chain, which the value restriction admits as the body of a `Λ` (spec 04 §Value forms, e.g. `Λ a. M.Cons [a] v1 v2`), and as a run-time spine `M.g ς` (spec 06 §Values), with formation steps turning the first into the second. No evaluation context goes under `Λ`, so such a body is a static value form but not a run-time value, and the term is stuck, which contradicts progress. | There is no spine syntax: the chain is the only form and the spine is a view of it (§3). Reduction is the specification's up to the formation steps, which are administrative and do not exist here. |
+| The initialization-safety judgement gives no rule for the run-time forms (spec 10 §What an initializer reads), but reduction puts `force ν` into the initializers of a nested group (spec 06 §Recursive bindings). | Run-time forms have rules (§5), so the judgement is defined on every term that reduction produces. |

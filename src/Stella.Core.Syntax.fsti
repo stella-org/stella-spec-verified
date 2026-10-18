@@ -358,7 +358,7 @@ let fail_dt (partial unit_ctor: qname) (t: typ) : dtree =
     evaluation context goes under `Λ`, so that chain is itself a run-time
     value. The spine-formation steps of spec 06 §Forming and reducing a spine
     only move arguments from applications into a spine; they have no
-    counterpart, and reduction is the spec's up to them (design §3, §5). *)
+    counterpart, and reduction is the spec's up to them (design §3, §6). *)
 
 (** An argument of a chain, the entries `α` of a spine after formation
     (spec 06 §Forming and reducing a spine). *)
