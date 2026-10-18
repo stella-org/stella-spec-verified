@@ -10,6 +10,8 @@
  *     inside them, the operation's binders (design §3.1).
  *   - The type of a data constructor, a foreign, and a top-level value has
  *     kind `Type` under its kind variables, with no type variable in scope.
+ *   - A name is at most one of a data constructor, a foreign, and a
+ *     top-level value (`globals_disjoint`).
  *
  * Each class of entry has its own condition, so that a fact needing only
  * one of them assumes only that one.
@@ -60,5 +62,14 @@ let foreigns_wf (sg: sig) : prop =
 let values_wf (sg: sig) : prop =
   forall (q: qname). match sg.values q with Some vi -> scheme_ok sg vi.vl_nk vi.vl_ty | None -> True
 
+(** Every name is recorded in at most one of the value-level tables, so a
+    global is a data constructor, a foreign, or a top-level value, and never
+    two of them. *)
+let globals_disjoint (sg: sig) : prop =
+  forall (q: qname).
+    (Some? (sg.ctors q) ==> None? (sg.foreigns q) /\ None? (sg.values q)) /\
+    (Some? (sg.foreigns q) ==> None? (sg.values q))
+
 let sig_wf (sg: sig) : prop =
-  tycons_wf sg /\ effects_wf sg /\ ctors_wf sg /\ foreigns_wf sg /\ values_wf sg
+  tycons_wf sg /\ effects_wf sg /\ ctors_wf sg /\ foreigns_wf sg /\ values_wf sg /\
+  globals_disjoint sg

@@ -46,7 +46,6 @@ let rec ren_ren_jp (xi: ren) (zeta: ren) (theta: ren) (e: exp)
   | EOpenEff _ b -> ren_ren_jp xi zeta theta b
   | ERegion _ es b -> ren_ren_jp_exps xi zeta theta es; ren_ren_jp xi zeta theta b
   | EWriteCell _ _ b -> ren_ren_jp xi zeta theta b
-  | ESpine _ sp -> ren_ren_jp_spine xi zeta theta sp
   | EMatch th dt -> ren_ren_jp_exps xi zeta theta th; ren_ren_jp_dt xi zeta theta dt
   | EOpenEffC _ b -> ren_ren_jp xi zeta theta b
   | EFill _ b -> ren_ren_jp xi zeta theta b
@@ -75,17 +74,6 @@ and ren_ren_jp_cells (xi: ren) (zeta: ren) (theta: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_ren_jp xi zeta theta e; ren_ren_jp_cells xi zeta theta th
-
-and ren_ren_jp_spine (xi: ren) (zeta: ren) (theta: ren) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == xi (zeta i))
-          (ensures ren_jp_spine xi (ren_jp_spine zeta sp) == ren_jp_spine theta sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_ren_jp_spine xi zeta theta sp
-  | STy _ :: sp -> ren_ren_jp_spine xi zeta theta sp
-  | SConstr :: sp -> ren_ren_jp_spine xi zeta theta sp
-  | SVal v :: sp -> ren_ren_jp xi zeta theta v; ren_ren_jp_spine xi zeta theta sp
 
 and ren_ren_jp_dt (xi: ren) (zeta: ren) (theta: ren) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == xi (zeta i))
@@ -155,7 +143,6 @@ let rec ren_id_jp (xi: ren) (e: exp)
   | EOpenEff _ b -> ren_id_jp xi b
   | ERegion _ es b -> ren_id_jp_exps xi es; ren_id_jp xi b
   | EWriteCell _ _ b -> ren_id_jp xi b
-  | ESpine _ sp -> ren_id_jp_spine xi sp
   | EMatch th dt -> ren_id_jp_exps xi th; ren_id_jp_dt xi dt
   | EOpenEffC _ b -> ren_id_jp xi b
   | EFill _ b -> ren_id_jp xi b
@@ -184,17 +171,6 @@ and ren_id_jp_cells (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_id_jp xi e; ren_id_jp_cells xi th
-
-and ren_id_jp_spine (xi: ren) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). xi i == i)
-          (ensures ren_jp_spine xi sp == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_id_jp_spine xi sp
-  | STy _ :: sp -> ren_id_jp_spine xi sp
-  | SConstr :: sp -> ren_id_jp_spine xi sp
-  | SVal v :: sp -> ren_id_jp xi v; ren_id_jp_spine xi sp
 
 and ren_id_jp_dt (xi: ren) (dt: dtree)
   : Lemma (requires forall (i: nat). xi i == i)
@@ -273,7 +249,6 @@ let rec sub_ty_ren_tm (sigma: tsub) (xi: ren) (e: exp)
   | EOpenEff _ b -> sub_ty_ren_tm sigma xi b
   | ERegion _ es b -> sub_ty_ren_tm_exps sigma xi es; sub_ty_ren_tm sigma xi b
   | EWriteCell _ _ b -> sub_ty_ren_tm sigma xi b
-  | ESpine _ sp -> sub_ty_ren_tm_spine sigma xi sp
   | EMatch th dt -> sub_ty_ren_tm_exps sigma xi th; sub_ty_ren_tm_dt sigma xi dt
   | EOpenEffC _ b -> sub_ty_ren_tm sigma xi b
   | EFill _ b -> sub_ty_ren_tm sigma xi b
@@ -301,17 +276,6 @@ and sub_ty_ren_tm_cells (sigma: tsub) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_ty_ren_tm sigma xi e; sub_ty_ren_tm_cells sigma xi th
-
-and sub_ty_ren_tm_spine (sigma: tsub) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures sub_ty_spine sigma (ren_tm_spine xi sp)
-                     == ren_tm_spine xi (sub_ty_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_ty_ren_tm_spine sigma xi sp
-  | STy _ :: sp -> sub_ty_ren_tm_spine sigma xi sp
-  | SConstr :: sp -> sub_ty_ren_tm_spine sigma xi sp
-  | SVal v :: sp -> sub_ty_ren_tm sigma xi v; sub_ty_ren_tm_spine sigma xi sp
 
 and sub_ty_ren_tm_dt (sigma: tsub) (xi: ren) (dt: dtree)
   : Lemma (ensures sub_ty_dt sigma (ren_tm_dt xi dt) == ren_tm_dt xi (sub_ty_dt sigma dt))
@@ -383,7 +347,6 @@ let rec ren_jp_ren_tm (zeta: ren) (xi: ren) (e: exp)
   | EOpenEff _ b -> ren_jp_ren_tm zeta xi b
   | ERegion _ es b -> ren_jp_ren_tm_exps zeta xi es; ren_jp_ren_tm zeta xi b
   | EWriteCell _ _ b -> ren_jp_ren_tm zeta xi b
-  | ESpine _ sp -> ren_jp_ren_tm_spine zeta xi sp
   | EMatch th dt -> ren_jp_ren_tm_exps zeta xi th; ren_jp_ren_tm_dt zeta xi dt
   | EOpenEffC _ b -> ren_jp_ren_tm zeta xi b
   | EFill _ b -> ren_jp_ren_tm zeta xi b
@@ -409,16 +372,6 @@ and ren_jp_ren_tm_cells (zeta: ren) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_jp_ren_tm zeta xi e; ren_jp_ren_tm_cells zeta xi th
-
-and ren_jp_ren_tm_spine (zeta: ren) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures ren_jp_spine zeta (ren_tm_spine xi sp) == ren_tm_spine xi (ren_jp_spine zeta sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_jp_ren_tm_spine zeta xi sp
-  | STy _ :: sp -> ren_jp_ren_tm_spine zeta xi sp
-  | SConstr :: sp -> ren_jp_ren_tm_spine zeta xi sp
-  | SVal v :: sp -> ren_jp_ren_tm zeta xi v; ren_jp_ren_tm_spine zeta xi sp
 
 and ren_jp_ren_tm_dt (zeta: ren) (xi: ren) (dt: dtree)
   : Lemma (ensures ren_jp_dt zeta (ren_tm_dt xi dt) == ren_tm_dt xi (ren_jp_dt zeta dt))
@@ -485,7 +438,6 @@ let rec sub_ty_ren_jp (sigma: tsub) (zeta: ren) (e: exp)
   | EOpenEff _ b -> sub_ty_ren_jp sigma zeta b
   | ERegion _ es b -> sub_ty_ren_jp_exps sigma zeta es; sub_ty_ren_jp sigma zeta b
   | EWriteCell _ _ b -> sub_ty_ren_jp sigma zeta b
-  | ESpine _ sp -> sub_ty_ren_jp_spine sigma zeta sp
   | EMatch th dt -> sub_ty_ren_jp_exps sigma zeta th; sub_ty_ren_jp_dt sigma zeta dt
   | EOpenEffC _ b -> sub_ty_ren_jp sigma zeta b
   | EFill _ b -> sub_ty_ren_jp sigma zeta b
@@ -514,17 +466,6 @@ and sub_ty_ren_jp_cells (sigma: tsub) (zeta: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_ty_ren_jp sigma zeta e; sub_ty_ren_jp_cells sigma zeta th
-
-and sub_ty_ren_jp_spine (sigma: tsub) (zeta: ren) (sp: list spine_arg)
-  : Lemma (ensures sub_ty_spine sigma (ren_jp_spine zeta sp)
-                     == ren_jp_spine zeta (sub_ty_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_ty_ren_jp_spine sigma zeta sp
-  | STy _ :: sp -> sub_ty_ren_jp_spine sigma zeta sp
-  | SConstr :: sp -> sub_ty_ren_jp_spine sigma zeta sp
-  | SVal v :: sp -> sub_ty_ren_jp sigma zeta v; sub_ty_ren_jp_spine sigma zeta sp
 
 and sub_ty_ren_jp_dt (sigma: tsub) (zeta: ren) (dt: dtree)
   : Lemma (ensures sub_ty_dt sigma (ren_jp_dt zeta dt) == ren_jp_dt zeta (sub_ty_dt sigma dt))
@@ -623,7 +564,6 @@ let rec rinst_tm (xi: ren) (sigma: esub) (e: exp)
   | EOpenEff _ b -> rinst_tm xi sigma b
   | ERegion _ es b -> rinst_tm_exps xi sigma es; rinst_tm xi sigma b
   | EWriteCell _ _ b -> rinst_tm xi sigma b
-  | ESpine _ sp -> rinst_tm_spine xi sigma sp
   | EMatch th dt -> rinst_tm_exps xi sigma th; rinst_tm_dt xi sigma dt
   | EOpenEffC _ b -> rinst_tm xi sigma b
   | EFill _ b -> rinst_tm xi sigma b
@@ -652,17 +592,6 @@ and rinst_tm_cells (xi: ren) (sigma: esub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> rinst_tm xi sigma e; rinst_tm_cells xi sigma th
-
-and rinst_tm_spine (xi: ren) (sigma: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). sigma i == EVar (xi i))
-          (ensures ren_tm_spine xi sp == sub_tm_spine sigma sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> rinst_tm_spine xi sigma sp
-  | STy _ :: sp -> rinst_tm_spine xi sigma sp
-  | SConstr :: sp -> rinst_tm_spine xi sigma sp
-  | SVal v :: sp -> rinst_tm xi sigma v; rinst_tm_spine xi sigma sp
 
 and rinst_tm_dt (xi: ren) (sigma: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). sigma i == EVar (xi i))
@@ -767,7 +696,6 @@ let rec sub_ren_tm (sigma: esub) (xi: ren) (theta: esub) (e: exp)
   | EOpenEff _ b -> sub_ren_tm sigma xi theta b
   | ERegion _ es b -> sub_ren_tm_exps sigma xi theta es; sub_ren_tm sigma xi theta b
   | EWriteCell _ _ b -> sub_ren_tm sigma xi theta b
-  | ESpine _ sp -> sub_ren_tm_spine sigma xi theta sp
   | EMatch th dt -> sub_ren_tm_exps sigma xi theta th; sub_ren_tm_dt sigma xi theta dt
   | EOpenEffC _ b -> sub_ren_tm sigma xi theta b
   | EFill _ b -> sub_ren_tm sigma xi theta b
@@ -796,17 +724,6 @@ and sub_ren_tm_cells (sigma: esub) (xi: ren) (theta: esub) (th: list (key & exp)
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_ren_tm sigma xi theta e; sub_ren_tm_cells sigma xi theta th
-
-and sub_ren_tm_spine (sigma: esub) (xi: ren) (theta: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == sigma (xi i))
-          (ensures sub_tm_spine sigma (ren_tm_spine xi sp) == sub_tm_spine theta sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_ren_tm_spine sigma xi theta sp
-  | STy _ :: sp -> sub_ren_tm_spine sigma xi theta sp
-  | SConstr :: sp -> sub_ren_tm_spine sigma xi theta sp
-  | SVal v :: sp -> sub_ren_tm sigma xi theta v; sub_ren_tm_spine sigma xi theta sp
 
 and sub_ren_tm_dt (sigma: esub) (xi: ren) (theta: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == sigma (xi i))
@@ -931,7 +848,6 @@ let rec ren_sub_tm (xi: ren) (sigma: esub) (theta: esub) (e: exp)
   | EOpenEff _ b -> ren_sub_tm xi sigma theta b
   | ERegion _ es b -> ren_sub_tm_exps xi sigma theta es; ren_sub_tm xi sigma theta b
   | EWriteCell _ _ b -> ren_sub_tm xi sigma theta b
-  | ESpine _ sp -> ren_sub_tm_spine xi sigma theta sp
   | EMatch th dt -> ren_sub_tm_exps xi sigma theta th; ren_sub_tm_dt xi sigma theta dt
   | EOpenEffC _ b -> ren_sub_tm xi sigma theta b
   | EFill _ b -> ren_sub_tm xi sigma theta b
@@ -960,17 +876,6 @@ and ren_sub_tm_cells (xi: ren) (sigma: esub) (theta: esub) (th: list (key & exp)
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_sub_tm xi sigma theta e; ren_sub_tm_cells xi sigma theta th
-
-and ren_sub_tm_spine (xi: ren) (sigma: esub) (theta: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == ren_tm xi (sigma i))
-          (ensures ren_tm_spine xi (sub_tm_spine sigma sp) == sub_tm_spine theta sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_sub_tm_spine xi sigma theta sp
-  | STy _ :: sp -> ren_sub_tm_spine xi sigma theta sp
-  | SConstr :: sp -> ren_sub_tm_spine xi sigma theta sp
-  | SVal v :: sp -> ren_sub_tm xi sigma theta v; ren_sub_tm_spine xi sigma theta sp
 
 and ren_sub_tm_dt (xi: ren) (sigma: esub) (theta: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == ren_tm xi (sigma i))
@@ -1085,7 +990,6 @@ let rec ren_jp_sub_tm (zeta: ren) (tau: esub) (theta: esub) (e: exp)
   | EOpenEff _ b -> ren_jp_sub_tm zeta tau theta b
   | ERegion _ es b -> ren_jp_sub_tm_exps zeta tau theta es; ren_jp_sub_tm zeta tau theta b
   | EWriteCell _ _ b -> ren_jp_sub_tm zeta tau theta b
-  | ESpine _ sp -> ren_jp_sub_tm_spine zeta tau theta sp
   | EMatch th dt -> ren_jp_sub_tm_exps zeta tau theta th; ren_jp_sub_tm_dt zeta tau theta dt
   | EOpenEffC _ b -> ren_jp_sub_tm zeta tau theta b
   | EFill _ b -> ren_jp_sub_tm zeta tau theta b
@@ -1116,18 +1020,6 @@ and ren_jp_sub_tm_cells (zeta: ren) (tau: esub) (theta: esub) (th: list (key & e
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_jp_sub_tm zeta tau theta e; ren_jp_sub_tm_cells zeta tau theta th
-
-and ren_jp_sub_tm_spine (zeta: ren) (tau: esub) (theta: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == ren_jp zeta (tau i))
-          (ensures ren_jp_spine zeta (sub_tm_spine tau sp)
-                     == sub_tm_spine theta (ren_jp_spine zeta sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_jp_sub_tm_spine zeta tau theta sp
-  | STy _ :: sp -> ren_jp_sub_tm_spine zeta tau theta sp
-  | SConstr :: sp -> ren_jp_sub_tm_spine zeta tau theta sp
-  | SVal v :: sp -> ren_jp_sub_tm zeta tau theta v; ren_jp_sub_tm_spine zeta tau theta sp
 
 and ren_jp_sub_tm_dt (zeta: ren) (tau: esub) (theta: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == ren_jp zeta (tau i))
@@ -1243,7 +1135,6 @@ let rec sub_ty_sub_tm (sigma: tsub) (tau: esub) (theta: esub) (e: exp)
   | EOpenEff _ b -> sub_ty_sub_tm sigma tau theta b
   | ERegion _ es b -> sub_ty_sub_tm_exps sigma tau theta es; sub_ty_sub_tm sigma tau theta b
   | EWriteCell _ _ b -> sub_ty_sub_tm sigma tau theta b
-  | ESpine _ sp -> sub_ty_sub_tm_spine sigma tau theta sp
   | EMatch th dt -> sub_ty_sub_tm_exps sigma tau theta th; sub_ty_sub_tm_dt sigma tau theta dt
   | EOpenEffC _ b -> sub_ty_sub_tm sigma tau theta b
   | EFill _ b -> sub_ty_sub_tm sigma tau theta b
@@ -1275,18 +1166,6 @@ and sub_ty_sub_tm_cells (sigma: tsub) (tau: esub) (theta: esub) (th: list (key &
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_ty_sub_tm sigma tau theta e; sub_ty_sub_tm_cells sigma tau theta th
-
-and sub_ty_sub_tm_spine (sigma: tsub) (tau: esub) (theta: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == sub_ty_exp sigma (tau i))
-          (ensures sub_ty_spine sigma (sub_tm_spine tau sp)
-                     == sub_tm_spine theta (sub_ty_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_ty_sub_tm_spine sigma tau theta sp
-  | STy _ :: sp -> sub_ty_sub_tm_spine sigma tau theta sp
-  | SConstr :: sp -> sub_ty_sub_tm_spine sigma tau theta sp
-  | SVal v :: sp -> sub_ty_sub_tm sigma tau theta v; sub_ty_sub_tm_spine sigma tau theta sp
 
 and sub_ty_sub_tm_dt (sigma: tsub) (tau: esub) (theta: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == sub_ty_exp sigma (tau i))
@@ -1416,7 +1295,6 @@ let rec sub_sub_tm (tau: esub) (sigma: esub) (theta: esub) (e: exp)
   | EOpenEff _ b -> sub_sub_tm tau sigma theta b
   | ERegion _ es b -> sub_sub_tm_exps tau sigma theta es; sub_sub_tm tau sigma theta b
   | EWriteCell _ _ b -> sub_sub_tm tau sigma theta b
-  | ESpine _ sp -> sub_sub_tm_spine tau sigma theta sp
   | EMatch th dt -> sub_sub_tm_exps tau sigma theta th; sub_sub_tm_dt tau sigma theta dt
   | EOpenEffC _ b -> sub_sub_tm tau sigma theta b
   | EFill _ b -> sub_sub_tm tau sigma theta b
@@ -1445,17 +1323,6 @@ and sub_sub_tm_cells (tau: esub) (sigma: esub) (theta: esub) (th: list (key & ex
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_sub_tm tau sigma theta e; sub_sub_tm_cells tau sigma theta th
-
-and sub_sub_tm_spine (tau: esub) (sigma: esub) (theta: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). theta i == sub_tm tau (sigma i))
-          (ensures sub_tm_spine tau (sub_tm_spine sigma sp) == sub_tm_spine theta sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_sub_tm_spine tau sigma theta sp
-  | STy _ :: sp -> sub_sub_tm_spine tau sigma theta sp
-  | SConstr :: sp -> sub_sub_tm_spine tau sigma theta sp
-  | SVal v :: sp -> sub_sub_tm tau sigma theta v; sub_sub_tm_spine tau sigma theta sp
 
 and sub_sub_tm_dt (tau: esub) (sigma: esub) (theta: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). theta i == sub_tm tau (sigma i))
@@ -1554,7 +1421,6 @@ let rec sub_id_tm (sigma: esub) (e: exp)
   | EOpenEff _ b -> sub_id_tm sigma b
   | ERegion _ es b -> sub_id_tm_exps sigma es; sub_id_tm sigma b
   | EWriteCell _ _ b -> sub_id_tm sigma b
-  | ESpine _ sp -> sub_id_tm_spine sigma sp
   | EMatch th dt -> sub_id_tm_exps sigma th; sub_id_tm_dt sigma dt
   | EOpenEffC _ b -> sub_id_tm sigma b
   | EFill _ b -> sub_id_tm sigma b
@@ -1583,17 +1449,6 @@ and sub_id_tm_cells (sigma: esub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> sub_id_tm sigma e; sub_id_tm_cells sigma th
-
-and sub_id_tm_spine (sigma: esub) (sp: list spine_arg)
-  : Lemma (requires forall (i: nat). sigma i == EVar i)
-          (ensures sub_tm_spine sigma sp == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> sub_id_tm_spine sigma sp
-  | STy _ :: sp -> sub_id_tm_spine sigma sp
-  | SConstr :: sp -> sub_id_tm_spine sigma sp
-  | SVal v :: sp -> sub_id_tm sigma v; sub_id_tm_spine sigma sp
 
 and sub_id_tm_dt (sigma: esub) (dt: dtree)
   : Lemma (requires forall (i: nat). sigma i == EVar i)

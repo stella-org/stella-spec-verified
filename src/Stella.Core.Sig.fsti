@@ -21,7 +21,7 @@ module L = FStar.List.Tot
     values). *)
 type canon_class =
   | ClsLiteral        (** a literal: `Int`, `Number`, `String`, `Char`, `Boolean` *)
-  | ClsFunction       (** `λ`, an unsaturated spine, `openEff`: `Function` *)
+  | ClsFunction       (** `λ`, an unsaturated application chain, `openEff`: `Function` *)
   | ClsRecord         (** `{}`, `extend`: `Record` *)
   | ClsVariant        (** `inject`, `weaken`: `Variant` *)
   | ClsOpaque         (** `opaque ω [τ]`: `IO` and every other intrinsic *)

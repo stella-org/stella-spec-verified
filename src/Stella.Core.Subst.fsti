@@ -150,7 +150,6 @@ let rec kinst_exp (ks: list kind) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff (kinst_ty ks t) (kinst_exp ks b)
   | ERegion l es b -> ERegion (kinst_layout ks l) (kinst_exps ks es) (kinst_exp ks b)
   | EWriteCell r k b -> EWriteCell r k (kinst_exp ks b)
-  | ESpine n sp -> ESpine n (kinst_spine ks sp)
   | EMatch th dt -> EMatch (kinst_exps ks th) (kinst_dt ks dt)
   | EOpenEffC t b -> EOpenEffC (kinst_ty ks t) (kinst_exp ks b)
   | EFill a b -> EFill a (kinst_exp ks b)
@@ -171,14 +170,6 @@ and kinst_cells (ks: list kind) (th: list (key & exp)) : Tot (list (key & exp)) 
   match th with
   | [] -> []
   | (k, e) :: th -> (k, kinst_exp ks e) :: kinst_cells ks th
-
-and kinst_spine (ks: list kind) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds (kinst_kinds ks kl) :: kinst_spine ks sp
-  | STy t :: sp -> STy (kinst_ty ks t) :: kinst_spine ks sp
-  | SConstr :: sp -> SConstr :: kinst_spine ks sp
-  | SVal v :: sp -> SVal (kinst_exp ks v) :: kinst_spine ks sp
 
 and kinst_dt (ks: list kind) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -350,7 +341,6 @@ let rec ren_ty_exp (xi: ren) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff (ren_ty xi t) (ren_ty_exp xi b)
   | ERegion l es b -> ERegion (ren_layout xi l) (ren_ty_exps xi es) (ren_ty_exp xi b)
   | EWriteCell r k b -> EWriteCell r k (ren_ty_exp xi b)
-  | ESpine q sp -> ESpine q (ren_ty_spine xi sp)
   | EMatch th dt -> EMatch (ren_ty_exps xi th) (ren_ty_dt xi dt)
   | EOpenEffC t b -> EOpenEffC (ren_ty xi t) (ren_ty_exp xi b)
   | EFill nu b -> EFill nu (ren_ty_exp xi b)
@@ -371,14 +361,6 @@ and ren_ty_cells (xi: ren) (th: list (key & exp)) : Tot (list (key & exp)) (decr
   match th with
   | [] -> []
   | (k, e) :: th -> (k, ren_ty_exp xi e) :: ren_ty_cells xi th
-
-and ren_ty_spine (xi: ren) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: ren_ty_spine xi sp
-  | STy t :: sp -> STy (ren_ty xi t) :: ren_ty_spine xi sp
-  | SConstr :: sp -> SConstr :: ren_ty_spine xi sp
-  | SVal v :: sp -> SVal (ren_ty_exp xi v) :: ren_ty_spine xi sp
 
 and ren_ty_dt (xi: ren) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -443,7 +425,6 @@ let rec sub_ty_exp (sigma: tsub) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff (sub_ty sigma t) (sub_ty_exp sigma b)
   | ERegion l es b -> ERegion (sub_layout sigma l) (sub_ty_exps sigma es) (sub_ty_exp sigma b)
   | EWriteCell r k b -> EWriteCell r k (sub_ty_exp sigma b)
-  | ESpine q sp -> ESpine q (sub_ty_spine sigma sp)
   | EMatch th dt -> EMatch (sub_ty_exps sigma th) (sub_ty_dt sigma dt)
   | EOpenEffC t b -> EOpenEffC (sub_ty sigma t) (sub_ty_exp sigma b)
   | EFill nu b -> EFill nu (sub_ty_exp sigma b)
@@ -464,14 +445,6 @@ and sub_ty_cells (sigma: tsub) (th: list (key & exp)) : Tot (list (key & exp)) (
   match th with
   | [] -> []
   | (k, e) :: th -> (k, sub_ty_exp sigma e) :: sub_ty_cells sigma th
-
-and sub_ty_spine (sigma: tsub) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: sub_ty_spine sigma sp
-  | STy t :: sp -> STy (sub_ty sigma t) :: sub_ty_spine sigma sp
-  | SConstr :: sp -> SConstr :: sub_ty_spine sigma sp
-  | SVal v :: sp -> SVal (sub_ty_exp sigma v) :: sub_ty_spine sigma sp
 
 and sub_ty_dt (sigma: tsub) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -545,7 +518,6 @@ let rec ren_tm (xi: ren) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff t (ren_tm xi b)
   | ERegion l es b -> ERegion l (ren_tm_exps xi es) (ren_tm xi b)
   | EWriteCell r k b -> EWriteCell r k (ren_tm xi b)
-  | ESpine q sp -> ESpine q (ren_tm_spine xi sp)
   | EMatch th dt -> EMatch (ren_tm_exps xi th) (ren_tm_dt xi dt)
   | EOpenEffC t b -> EOpenEffC t (ren_tm xi b)
   | EFill nu b -> EFill nu (ren_tm xi b)
@@ -565,14 +537,6 @@ and ren_tm_cells (xi: ren) (th: list (key & exp)) : Tot (list (key & exp)) (decr
   match th with
   | [] -> []
   | (k, e) :: th -> (k, ren_tm xi e) :: ren_tm_cells xi th
-
-and ren_tm_spine (xi: ren) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: ren_tm_spine xi sp
-  | STy t :: sp -> STy t :: ren_tm_spine xi sp
-  | SConstr :: sp -> SConstr :: ren_tm_spine xi sp
-  | SVal v :: sp -> SVal (ren_tm xi v) :: ren_tm_spine xi sp
 
 and ren_tm_dt (xi: ren) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -640,7 +604,6 @@ let rec ren_jp (xi: ren) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff t (ren_jp xi b)
   | ERegion l es b -> ERegion l (ren_jp_exps xi es) (ren_jp xi b)
   | EWriteCell r k b -> EWriteCell r k (ren_jp xi b)
-  | ESpine q sp -> ESpine q (ren_jp_spine xi sp)
   | EMatch th dt -> EMatch (ren_jp_exps xi th) (ren_jp_dt xi dt)
   | EOpenEffC t b -> EOpenEffC t (ren_jp xi b)
   | EFill nu b -> EFill nu (ren_jp xi b)
@@ -660,14 +623,6 @@ and ren_jp_cells (xi: ren) (th: list (key & exp)) : Tot (list (key & exp)) (decr
   match th with
   | [] -> []
   | (k, e) :: th -> (k, ren_jp xi e) :: ren_jp_cells xi th
-
-and ren_jp_spine (xi: ren) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: ren_jp_spine xi sp
-  | STy t :: sp -> STy t :: ren_jp_spine xi sp
-  | SConstr :: sp -> SConstr :: ren_jp_spine xi sp
-  | SVal v :: sp -> SVal (ren_jp xi v) :: ren_jp_spine xi sp
 
 and ren_jp_dt (xi: ren) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -747,7 +702,6 @@ let rec sub_tm (sigma: esub) (e: exp) : Tot exp (decreases e) =
   | EOpenEff t b -> EOpenEff t (sub_tm sigma b)
   | ERegion l es b -> ERegion l (sub_tm_exps sigma es) (sub_tm sigma b)
   | EWriteCell r k b -> EWriteCell r k (sub_tm sigma b)
-  | ESpine q sp -> ESpine q (sub_tm_spine sigma sp)
   | EMatch th dt -> EMatch (sub_tm_exps sigma th) (sub_tm_dt sigma dt)
   | EOpenEffC t b -> EOpenEffC t (sub_tm sigma b)
   | EFill nu b -> EFill nu (sub_tm sigma b)
@@ -767,14 +721,6 @@ and sub_tm_cells (sigma: esub) (th: list (key & exp)) : Tot (list (key & exp)) (
   match th with
   | [] -> []
   | (k, e) :: th -> (k, sub_tm sigma e) :: sub_tm_cells sigma th
-
-and sub_tm_spine (sigma: esub) (sp: list spine_arg) : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: sub_tm_spine sigma sp
-  | STy t :: sp -> STy t :: sub_tm_spine sigma sp
-  | SConstr :: sp -> SConstr :: sub_tm_spine sigma sp
-  | SVal v :: sp -> SVal (sub_tm sigma v) :: sub_tm_spine sigma sp
 
 and sub_tm_dt (sigma: esub) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with

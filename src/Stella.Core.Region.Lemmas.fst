@@ -490,7 +490,6 @@ let rec lc_mono_exp (n: nat) (m: nat) (e: exp)
   | EOpenEff t b -> lc_mono_ty n m t; lc_mono_exp n m b
   | ERegion l es b -> lc_mono_layout n m l; lc_mono_exps n m es; lc_mono_exp (n + 1) (m + 1) b
   | EWriteCell _ _ b -> lc_mono_exp n m b
-  | ESpine _ sp -> lc_mono_spine n m sp
   | EMatch th dt -> lc_mono_exps n m th; lc_mono_dt n m dt
   | EOpenEffC t b -> lc_mono_ty n m t; lc_mono_exp n m b
   | EFill _ b -> lc_mono_exp n m b
@@ -520,17 +519,6 @@ and lc_mono_cells (n: nat) (m: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_mono_exp n m e; lc_mono_cells n m th
-
-and lc_mono_spine (n: nat) (m: nat) (sp: list spine_arg)
-  : Lemma (requires n <= m /\ lc_spine_at n sp)
-          (ensures lc_spine_at m sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_mono_spine n m sp
-  | STy t :: sp -> lc_mono_ty n m t; lc_mono_spine n m sp
-  | SConstr :: sp -> lc_mono_spine n m sp
-  | SVal v :: sp -> lc_mono_exp n m v; lc_mono_spine n m sp
 
 and lc_mono_dt (n: nat) (m: nat) (dt: dtree)
   : Lemma (requires n <= m /\ lc_dt_at n dt)
@@ -611,7 +599,6 @@ let rec lc_open_exp (a: atom) (d: nat) (e: exp)
   | EOpenEff t b -> lc_open_ty a d t; lc_open_exp a d b
   | ERegion l es b -> lc_open_layout a d l; lc_open_exps a d es; lc_open_exp a (d + 1) b
   | EWriteCell _ _ b -> lc_open_exp a d b
-  | ESpine _ sp -> lc_open_spine a d sp
   | EMatch th dt -> lc_open_exps a d th; lc_open_dt a d dt
   | EOpenEffC t b -> lc_open_ty a d t; lc_open_exp a d b
   | EFill _ b -> lc_open_exp a d b
@@ -641,17 +628,6 @@ and lc_open_cells (a: atom) (d: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_open_exp a d e; lc_open_cells a d th
-
-and lc_open_spine (a: atom) (d: nat) (sp: list spine_arg)
-  : Lemma (requires lc_spine_at (d + 1) sp)
-          (ensures lc_spine_at d (rmap_spine (open_rr a) d sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_open_spine a d sp
-  | STy t :: sp -> lc_open_ty a d t; lc_open_spine a d sp
-  | SConstr :: sp -> lc_open_spine a d sp
-  | SVal v :: sp -> lc_open_exp a d v; lc_open_spine a d sp
 
 and lc_open_dt (a: atom) (d: nat) (dt: dtree)
   : Lemma (requires lc_dt_at (d + 1) dt)
@@ -732,7 +708,6 @@ let rec open_lc_exp (a: atom) (d: nat) (e: exp)
   | EOpenEff t b -> open_lc_ty a d t; open_lc_exp a d b
   | ERegion l es b -> open_lc_layout a d l; open_lc_exps a d es; open_lc_exp a (d + 1) b
   | EWriteCell _ _ b -> open_lc_exp a d b
-  | ESpine _ sp -> open_lc_spine a d sp
   | EMatch th dt -> open_lc_exps a d th; open_lc_dt a d dt
   | EOpenEffC t b -> open_lc_ty a d t; open_lc_exp a d b
   | EFill _ b -> open_lc_exp a d b
@@ -762,17 +737,6 @@ and open_lc_cells (a: atom) (d: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> open_lc_exp a d e; open_lc_cells a d th
-
-and open_lc_spine (a: atom) (d: nat) (sp: list spine_arg)
-  : Lemma (requires lc_spine_at d sp)
-          (ensures rmap_spine (open_rr a) d sp == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> open_lc_spine a d sp
-  | STy t :: sp -> open_lc_ty a d t; open_lc_spine a d sp
-  | SConstr :: sp -> open_lc_spine a d sp
-  | SVal v :: sp -> open_lc_exp a d v; open_lc_spine a d sp
 
 and open_lc_dt (a: atom) (d: nat) (dt: dtree)
   : Lemma (requires lc_dt_at d dt)
@@ -853,7 +817,6 @@ let rec open_close_exp (a: atom) (d: nat) (e: exp)
   | EOpenEff t b -> open_close_ty a d t; open_close_exp a d b
   | ERegion l es b -> open_close_layout a d l; open_close_exps a d es; open_close_exp a (d + 1) b
   | EWriteCell _ _ b -> open_close_exp a d b
-  | ESpine _ sp -> open_close_spine a d sp
   | EMatch th dt -> open_close_exps a d th; open_close_dt a d dt
   | EOpenEffC t b -> open_close_ty a d t; open_close_exp a d b
   | EFill _ b -> open_close_exp a d b
@@ -883,17 +846,6 @@ and open_close_cells (a: atom) (d: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> open_close_exp a d e; open_close_cells a d th
-
-and open_close_spine (a: atom) (d: nat) (sp: list spine_arg)
-  : Lemma (requires lc_spine_at d sp)
-          (ensures rmap_spine (open_rr a) d (rmap_spine (close_rr a) d sp) == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> open_close_spine a d sp
-  | STy t :: sp -> open_close_ty a d t; open_close_spine a d sp
-  | SConstr :: sp -> open_close_spine a d sp
-  | SVal v :: sp -> open_close_exp a d v; open_close_spine a d sp
 
 and open_close_dt (a: atom) (d: nat) (dt: dtree)
   : Lemma (requires lc_dt_at d dt)
@@ -975,7 +927,6 @@ let rec close_open_exp (a: atom) (d: nat) (e: exp)
   | ERegion l es b -> close_open_layout a d l; close_open_exps a d es; close_open_exp a (d + 1) b
   | EReadCell r k -> close_open_rr a d r; close_open_key a d k
   | EWriteCell r k b -> close_open_rr a d r; close_open_key a d k; close_open_exp a d b
-  | ESpine _ sp -> close_open_spine a d sp
   | EMatch th dt -> close_open_exps a d th; close_open_dt a d dt
   | EOpenEffC t b -> close_open_ty a d t; close_open_exp a d b
   | EFill _ b -> close_open_exp a d b
@@ -1005,17 +956,6 @@ and close_open_cells (a: atom) (d: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (k, e) :: th -> close_open_key a d k; close_open_exp a d e; close_open_cells a d th
-
-and close_open_spine (a: atom) (d: nat) (sp: list spine_arg)
-  : Lemma (requires not (L.mem a (frn_spine sp)))
-          (ensures rmap_spine (close_rr a) d (rmap_spine (open_rr a) d sp) == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> close_open_spine a d sp
-  | STy t :: sp -> close_open_ty a d t; close_open_spine a d sp
-  | SConstr :: sp -> close_open_spine a d sp
-  | SVal v :: sp -> close_open_exp a d v; close_open_spine a d sp
 
 and close_open_dt (a: atom) (d: nat) (dt: dtree)
   : Lemma (requires not (L.mem a (frn_dt dt)))
@@ -1107,7 +1047,6 @@ let rec rmap_ren_tm (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (e: 
   | EOpenEff _ b -> rmap_ren_tm f d xi b
   | ERegion _ es b -> rmap_ren_tm_exps f d xi es; rmap_ren_tm f (d + 1) xi b
   | EWriteCell _ _ b -> rmap_ren_tm f d xi b
-  | ESpine _ sp -> rmap_ren_tm_spine f d xi sp
   | EMatch th dt -> rmap_ren_tm_exps f d xi th; rmap_ren_tm_dt f d xi dt
   | EOpenEffC _ b -> rmap_ren_tm f d xi b
   | EFill _ b -> rmap_ren_tm f d xi b
@@ -1133,16 +1072,6 @@ and rmap_ren_tm_cells (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (t
   match th with
   | [] -> ()
   | (_, e) :: th -> rmap_ren_tm f d xi e; rmap_ren_tm_cells f d xi th
-
-and rmap_ren_tm_spine (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures rmap_spine f d (ren_tm_spine xi sp) == ren_tm_spine xi (rmap_spine f d sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> rmap_ren_tm_spine f d xi sp
-  | STy _ :: sp -> rmap_ren_tm_spine f d xi sp
-  | SConstr :: sp -> rmap_ren_tm_spine f d xi sp
-  | SVal v :: sp -> rmap_ren_tm f d xi v; rmap_ren_tm_spine f d xi sp
 
 and rmap_ren_tm_dt (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (dt: dtree)
   : Lemma (ensures rmap_dt f d (ren_tm_dt xi dt) == ren_tm_dt xi (rmap_dt f d dt))
@@ -1216,7 +1145,6 @@ let rec rmap_ren_jp (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (e: 
   | EOpenEff _ b -> rmap_ren_jp f d xi b
   | ERegion _ es b -> rmap_ren_jp_exps f d xi es; rmap_ren_jp f (d + 1) xi b
   | EWriteCell _ _ b -> rmap_ren_jp f d xi b
-  | ESpine _ sp -> rmap_ren_jp_spine f d xi sp
   | EMatch th dt -> rmap_ren_jp_exps f d xi th; rmap_ren_jp_dt f d xi dt
   | EOpenEffC _ b -> rmap_ren_jp f d xi b
   | EFill _ b -> rmap_ren_jp f d xi b
@@ -1242,16 +1170,6 @@ and rmap_ren_jp_cells (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (t
   match th with
   | [] -> ()
   | (_, e) :: th -> rmap_ren_jp f d xi e; rmap_ren_jp_cells f d xi th
-
-and rmap_ren_jp_spine (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures rmap_spine f d (ren_jp_spine xi sp) == ren_jp_spine xi (rmap_spine f d sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> rmap_ren_jp_spine f d xi sp
-  | STy _ :: sp -> rmap_ren_jp_spine f d xi sp
-  | SConstr :: sp -> rmap_ren_jp_spine f d xi sp
-  | SVal v :: sp -> rmap_ren_jp f d xi v; rmap_ren_jp_spine f d xi sp
 
 and rmap_ren_jp_dt (f: nat -> region_ref -> region_ref) (d: nat) (xi: ren) (dt: dtree)
   : Lemma (ensures rmap_dt f d (ren_jp_dt xi dt) == ren_jp_dt xi (rmap_dt f d dt))
@@ -1325,7 +1243,6 @@ let rec lc_ren_tm (n: nat) (xi: ren) (e: exp)
   | EOpenEff _ b -> lc_ren_tm n xi b
   | ERegion _ es b -> lc_ren_tm_exps n xi es; lc_ren_tm (n + 1) xi b
   | EWriteCell _ _ b -> lc_ren_tm n xi b
-  | ESpine _ sp -> lc_ren_tm_spine n xi sp
   | EMatch th dt -> lc_ren_tm_exps n xi th; lc_ren_tm_dt n xi dt
   | EOpenEffC _ b -> lc_ren_tm n xi b
   | EFill _ b -> lc_ren_tm n xi b
@@ -1351,16 +1268,6 @@ and lc_ren_tm_cells (n: nat) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_ren_tm n xi e; lc_ren_tm_cells n xi th
-
-and lc_ren_tm_spine (n: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures lc_spine_at n (ren_tm_spine xi sp) == lc_spine_at n sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_ren_tm_spine n xi sp
-  | STy _ :: sp -> lc_ren_tm_spine n xi sp
-  | SConstr :: sp -> lc_ren_tm_spine n xi sp
-  | SVal v :: sp -> lc_ren_tm n xi v; lc_ren_tm_spine n xi sp
 
 and lc_ren_tm_dt (n: nat) (xi: ren) (dt: dtree)
   : Lemma (ensures lc_dt_at n (ren_tm_dt xi dt) == lc_dt_at n dt)
@@ -1431,7 +1338,6 @@ let rec lc_ren_jp (n: nat) (xi: ren) (e: exp)
   | EOpenEff _ b -> lc_ren_jp n xi b
   | ERegion _ es b -> lc_ren_jp_exps n xi es; lc_ren_jp (n + 1) xi b
   | EWriteCell _ _ b -> lc_ren_jp n xi b
-  | ESpine _ sp -> lc_ren_jp_spine n xi sp
   | EMatch th dt -> lc_ren_jp_exps n xi th; lc_ren_jp_dt n xi dt
   | EOpenEffC _ b -> lc_ren_jp n xi b
   | EFill _ b -> lc_ren_jp n xi b
@@ -1457,16 +1363,6 @@ and lc_ren_jp_cells (n: nat) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_ren_jp n xi e; lc_ren_jp_cells n xi th
-
-and lc_ren_jp_spine (n: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures lc_spine_at n (ren_jp_spine xi sp) == lc_spine_at n sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_ren_jp_spine n xi sp
-  | STy _ :: sp -> lc_ren_jp_spine n xi sp
-  | SConstr :: sp -> lc_ren_jp_spine n xi sp
-  | SVal v :: sp -> lc_ren_jp n xi v; lc_ren_jp_spine n xi sp
 
 and lc_ren_jp_dt (n: nat) (xi: ren) (dt: dtree)
   : Lemma (ensures lc_dt_at n (ren_jp_dt xi dt) == lc_dt_at n dt)
@@ -1556,7 +1452,6 @@ let rec rmap_sub_ty_exp (f: nat -> region_ref -> region_ref) (d: nat) (sigma: ts
     rmap_sub_layout (f d) sigma sigma l; rmap_sub_ty_exps f d sigma es;
     rmap_sub_ty_exp f (d + 1) sigma b
   | EWriteCell _ _ b -> rmap_sub_ty_exp f d sigma b
-  | ESpine _ sp -> rmap_sub_ty_spine f d sigma sp
   | EMatch th dt -> rmap_sub_ty_exps f d sigma th; rmap_sub_ty_dt f d sigma dt
   | EOpenEffC t b -> rmap_sub_ty (f d) sigma sigma t; rmap_sub_ty_exp f d sigma b
   | EFill _ b -> rmap_sub_ty_exp f d sigma b
@@ -1589,18 +1484,6 @@ and rmap_sub_ty_cells (f: nat -> region_ref -> region_ref) (d: nat) (sigma: tsub
   match th with
   | [] -> ()
   | (_, e) :: th -> rmap_sub_ty_exp f d sigma e; rmap_sub_ty_cells f d sigma th
-
-and rmap_sub_ty_spine (f: nat -> region_ref -> region_ref) (d: nat) (sigma: tsub)
-    (sp: list spine_arg)
-  : Lemma (requires (forall (d': nat) (i: nat). d <= d' ==> rmap_ty (f d') (sigma i) == sigma i))
-          (ensures rmap_spine f d (sub_ty_spine sigma sp) == sub_ty_spine sigma (rmap_spine f d sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> rmap_sub_ty_spine f d sigma sp
-  | STy t :: sp -> rmap_sub_ty (f d) sigma sigma t; rmap_sub_ty_spine f d sigma sp
-  | SConstr :: sp -> rmap_sub_ty_spine f d sigma sp
-  | SVal v :: sp -> rmap_sub_ty_exp f d sigma v; rmap_sub_ty_spine f d sigma sp
 
 and rmap_sub_ty_dt (f: nat -> region_ref -> region_ref) (d: nat) (sigma: tsub) (dt: dtree)
   : Lemma (requires (forall (d': nat) (i: nat). d <= d' ==> rmap_ty (f d') (sigma i) == sigma i))
@@ -1700,7 +1583,6 @@ let rec lc_sub_ty_exp (n: nat) (sigma: tsub) (e: exp)
     lc_sub_layout n sigma l; lc_sub_ty_exps n sigma es; lc_tsub_mono n sigma;
     lc_sub_ty_exp (n + 1) sigma b
   | EWriteCell _ _ b -> lc_sub_ty_exp n sigma b
-  | ESpine _ sp -> lc_sub_ty_spine n sigma sp
   | EMatch th dt -> lc_sub_ty_exps n sigma th; lc_sub_ty_dt n sigma dt
   | EOpenEffC t b -> lc_sub_ty n sigma t; lc_sub_ty_exp n sigma b
   | EFill _ b -> lc_sub_ty_exp n sigma b
@@ -1730,17 +1612,6 @@ and lc_sub_ty_cells (n: nat) (sigma: tsub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_sub_ty_exp n sigma e; lc_sub_ty_cells n sigma th
-
-and lc_sub_ty_spine (n: nat) (sigma: tsub) (sp: list spine_arg)
-  : Lemma (requires lc_spine_at n sp /\ (forall (i: nat). lc_ty_at n (sigma i)))
-          (ensures lc_spine_at n (sub_ty_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_sub_ty_spine n sigma sp
-  | STy t :: sp -> lc_sub_ty n sigma t; lc_sub_ty_spine n sigma sp
-  | SConstr :: sp -> lc_sub_ty_spine n sigma sp
-  | SVal v :: sp -> lc_sub_ty_exp n sigma v; lc_sub_ty_spine n sigma sp
 
 and lc_sub_ty_dt (n: nat) (sigma: tsub) (dt: dtree)
   : Lemma (requires lc_dt_at n dt /\ (forall (i: nat). lc_ty_at n (sigma i)))
@@ -1861,7 +1732,6 @@ let rec rmap_sub_tm (f: nat -> region_ref -> region_ref) (d: nat) (sigma: esub) 
   | EOpenEff _ b -> rmap_sub_tm f d sigma b
   | ERegion _ es b -> rmap_sub_tm_exps f d sigma es; rmap_sub_tm f (d + 1) sigma b
   | EWriteCell _ _ b -> rmap_sub_tm f d sigma b
-  | ESpine _ sp -> rmap_sub_tm_spine f d sigma sp
   | EMatch th dt -> rmap_sub_tm_exps f d sigma th; rmap_sub_tm_dt f d sigma dt
   | EOpenEffC _ b -> rmap_sub_tm f d sigma b
   | EFill _ b -> rmap_sub_tm f d sigma b
@@ -1892,18 +1762,6 @@ and rmap_sub_tm_cells (f: nat -> region_ref -> region_ref) (d: nat) (sigma: esub
   match th with
   | [] -> ()
   | (_, e) :: th -> rmap_sub_tm f d sigma e; rmap_sub_tm_cells f d sigma th
-
-and rmap_sub_tm_spine (f: nat -> region_ref -> region_ref) (d: nat) (sigma: esub)
-    (sp: list spine_arg)
-  : Lemma (requires (forall (d': nat) (i: nat). d <= d' ==> rmap_exp f d' (sigma i) == sigma i))
-          (ensures rmap_spine f d (sub_tm_spine sigma sp) == sub_tm_spine sigma (rmap_spine f d sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> rmap_sub_tm_spine f d sigma sp
-  | STy _ :: sp -> rmap_sub_tm_spine f d sigma sp
-  | SConstr :: sp -> rmap_sub_tm_spine f d sigma sp
-  | SVal v :: sp -> rmap_sub_tm f d sigma v; rmap_sub_tm_spine f d sigma sp
 
 and rmap_sub_tm_dt (f: nat -> region_ref -> region_ref) (d: nat) (sigma: esub) (dt: dtree)
   : Lemma (requires (forall (d': nat) (i: nat). d <= d' ==> rmap_exp f d' (sigma i) == sigma i))
@@ -2016,7 +1874,6 @@ let rec lc_sub_tm (n: nat) (sigma: esub) (e: exp)
   | EOpenEff _ b -> lc_sub_tm n sigma b
   | ERegion _ es b -> lc_sub_tm_exps n sigma es; lc_esub_mono n sigma; lc_sub_tm (n + 1) sigma b
   | EWriteCell _ _ b -> lc_sub_tm n sigma b
-  | ESpine _ sp -> lc_sub_tm_spine n sigma sp
   | EMatch th dt -> lc_sub_tm_exps n sigma th; lc_sub_tm_dt n sigma dt
   | EOpenEffC _ b -> lc_sub_tm n sigma b
   | EFill _ b -> lc_sub_tm n sigma b
@@ -2045,17 +1902,6 @@ and lc_sub_tm_cells (n: nat) (sigma: esub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> lc_sub_tm n sigma e; lc_sub_tm_cells n sigma th
-
-and lc_sub_tm_spine (n: nat) (sigma: esub) (sp: list spine_arg)
-  : Lemma (requires lc_spine_at n sp /\ (forall (i: nat). lc_exp_at n (sigma i)))
-          (ensures lc_spine_at n (sub_tm_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> lc_sub_tm_spine n sigma sp
-  | STy _ :: sp -> lc_sub_tm_spine n sigma sp
-  | SConstr :: sp -> lc_sub_tm_spine n sigma sp
-  | SVal v :: sp -> lc_sub_tm n sigma v; lc_sub_tm_spine n sigma sp
 
 and lc_sub_tm_dt (n: nat) (sigma: esub) (dt: dtree)
   : Lemma (requires lc_dt_at n dt /\ (forall (i: nat). lc_exp_at n (sigma i)))

@@ -71,7 +71,6 @@ let rec kinst_exp_nil (e: exp) : Lemma (ensures kinst_exp [] e == e) (decreases 
     kinst_exp_nil b; kinst_ent_nil h.h_ent; kinst_ty_nil h.h_ret_ty;
     kinst_exp_nil h.h_ret; kinst_cls_nil h.h_clauses
   | ERegion l es b -> kinst_layout_nil l; kinst_exps_nil es; kinst_exp_nil b
-  | ESpine _ sp -> kinst_spine_nil sp
   | ERegionOpen _ th b -> kinst_cells_nil th; kinst_exp_nil b
   | EOpaque _ t -> kinst_ty_nil t
 
@@ -91,15 +90,6 @@ and kinst_cells_nil (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> kinst_exp_nil e; kinst_cells_nil th
-
-and kinst_spine_nil (sp: list spine_arg)
-  : Lemma (ensures kinst_spine [] sp == sp) (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds kl :: sp -> kinst_kinds_nil kl; kinst_spine_nil sp
-  | STy t :: sp -> kinst_ty_nil t; kinst_spine_nil sp
-  | SConstr :: sp -> kinst_spine_nil sp
-  | SVal v :: sp -> kinst_exp_nil v; kinst_spine_nil sp
 
 and kinst_dt_nil (dt: dtree) : Lemma (ensures kinst_dt [] dt == dt) (decreases dt) =
   match dt with

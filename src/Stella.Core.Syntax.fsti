@@ -2,8 +2,8 @@
  * The abstract syntax of Stella's Typed Core.
  *
  * This module holds the AST of kinds, types, terms, decision trees and
- * handlers, together with the run-time forms of the semantics, and nothing
- * else. The binder-aware operations are in `Stella.Core.Subst` (the de Bruijn
+ * handlers, together with the run-time forms of the semantics, and the view
+ * of a global application chain as a head and its arguments. The binder-aware operations are in `Stella.Core.Subst` (the de Bruijn
  * sorts) and `Stella.Core.Region` (region names).
  *
  * References in comments take two forms:
@@ -61,6 +61,7 @@
 module Stella.Core.Syntax
 module U64 = FStar.UInt64
 module I32 = FStar.Int32
+module L = FStar.List.Tot
 
 (** ** Names *)
 
@@ -287,8 +288,7 @@ type exp =
                                 (** region [ℓ] ( k̄ : σ̄ ) @ ( ē ) in e; binds ℓ in e *)
   | EReadCell  : region_ref -> key -> exp             (** readCell ℓ.k *)
   | EWriteCell : region_ref -> key -> exp -> exp      (** writeCell ℓ.k e *)
-  (* -- run-time forms (spec 06 §Values, §Run-time forms) -- *)
-  | ESpine     : qname -> list spine_arg -> exp       (** M.g ς *)
+  (* -- run-time forms (spec 06 §Run-time forms) -- *)
   | EMatch     : list exp -> dtree -> exp             (** match θ dt *)
   | EOpenEffC  : typ -> exp -> exp                    (** openEffC [ρ] e *)
   | EForce     : atom -> exp                          (** force ν *)
@@ -296,14 +296,6 @@ type exp =
   | ERegionOpen: atom -> list (key & exp) -> exp -> exp
                                                       (** region⟨ℓ⟩ θ in e; binds nothing *)
   | EOpaque    : nat -> typ -> exp                    (** opaque ω [τ] *)
-
-(** A spine entry `ς` (spec 06 §Values): a kind vector, a type, a constraint
-    witness `[•]`, or a value. *)
-and spine_arg =
-  | SKinds  : list kind -> spine_arg       (** [[κ̄]] *)
-  | STy     : typ -> spine_arg             (** [τ] *)
-  | SConstr : spine_arg                    (** [•] *)
-  | SVal    : exp -> spine_arg             (** v *)
 
 (** Decision trees (spec 04 §Decision trees). `fail` is derived notation and
     has no constructor; see `fail_dt`. `switchLit`'s default is mandatory and
@@ -352,12 +344,93 @@ let fail_exp (partial unit_ctor: qname) (t: typ) : exp =
 let fail_dt (partial unit_ctor: qname) (t: typ) : dtree =
   DLeaf (fail_exp partial unit_ctor t)
 
+(** ** Global application chains (spec 04 §Value forms, spec 06 §Values)
+
+    A data constructor or a foreign applied to arguments has no syntax of its
+    own: it is the chain of `EApp`, `ETyApp` and `ECApp` over `EGlobal q ks`.
+    The kind vector `[[κ̄]]` stays on `EGlobal`; the type, constraint and value
+    arguments are read off the chain, and the spec's argument spine `ς` of
+    `M.g ς` is this view of it.
+
+    One syntax serves both the static and the run-time value forms. The value
+    restriction admits a constructor chain whose arguments are values as the
+    body of a `Λ` (spec 04 §Value forms), e.g. `Λ a. M.Cons [a] v1 v2`, and no
+    evaluation context goes under `Λ`, so that chain is itself a run-time
+    value. The spine-formation steps of spec 06 §Forming and reducing a spine
+    only move arguments from applications into a spine; they have no
+    counterpart, and reduction is the spec's up to them (design §3, §5). *)
+
+(** An argument of a chain, the entries `α` of a spine after formation
+    (spec 06 §Forming and reducing a spine). *)
+type spine_arg =
+  | STy     : typ -> spine_arg             (** [τ] *)
+  | SConstr : spine_arg                    (** [•] *)
+  | SVal    : exp -> spine_arg             (** v *)
+
+(** `e α`: one more argument applied to `e`. *)
+let apply_arg (e: exp) (a: spine_arg) : exp =
+  match a with
+  | STy t -> ETyApp e t
+  | SConstr -> ECApp e
+  | SVal v -> EApp e v
+
+(** `e α1 … αn`, the arguments in written order, `α1` applied first. *)
+let rec apply_args (e: exp) (args: list spine_arg) : Tot exp (decreases args) =
+  match args with
+  | [] -> e
+  | a :: args -> apply_args (apply_arg e a) args
+
+(** The chain `M.g [[κ̄]] α1 … αn`. *)
+let recompose (q: qname) (ks: list kind) (args: list spine_arg) : exp =
+  apply_args (EGlobal q ks) args
+
+(** The view of a chain: `decompose_global_app e` peels `EApp`, `ETyApp` and
+    `ECApp` off `e` down to an `EGlobal q ks`, and returns `q`, `ks` and the
+    arguments in written order. It is `None` when the innermost function
+    position is not a global. *)
+let rec decompose_global_app (e: exp)
+  : Tot (option (qname & list kind & list spine_arg)) (decreases e) =
+  match e with
+  | EGlobal q ks -> Some (q, ks, [])
+  | EApp f v ->
+    (match decompose_global_app f with
+     | Some (q, ks, args) -> Some (q, ks, L.append args [SVal v])
+     | None -> None)
+  | ETyApp f t ->
+    (match decompose_global_app f with
+     | Some (q, ks, args) -> Some (q, ks, L.append args [STy t])
+     | None -> None)
+  | ECApp f ->
+    (match decompose_global_app f with
+     | Some (q, ks, args) -> Some (q, ks, L.append args [SConstr])
+     | None -> None)
+  | _ -> None
+
+val apply_args_snoc (e: exp) (args: list spine_arg) (a: spine_arg)
+  : Lemma (apply_args e (L.append args [a]) == apply_arg (apply_args e args) a)
+
+(** Applying arguments to a chain extends its spine. *)
+val decompose_apply_args (e: exp) (args: list spine_arg)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures (let Some (q, ks, args0) = decompose_global_app e in
+                    decompose_global_app (apply_args e args) == Some (q, ks, L.append args0 args)))
+
+(** The round trip from a view. *)
+val decompose_recompose (q: qname) (ks: list kind) (args: list spine_arg)
+  : Lemma (decompose_global_app (recompose q ks args) == Some (q, ks, args))
+
+(** The round trip from a chain. *)
+val recompose_decompose (e: exp)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures (let Some (q, ks, args) = decompose_global_app e in
+                    recompose q ks args == e))
+
 (** ** Source terms *)
 
 (** `is_source e` holds when `e` contains none of the run-time forms of
     spec 06 §Run-time forms (`match`, `openEffC`, `force`, `fill`,
-    `region⟨ℓ⟩`, `opaque`) nor a spine (spec 06 §Values; elaboration writes
-    `M.x [[κ̄]]`, and the spine is formed by reduction).
+    `region⟨ℓ⟩`, `opaque`). Every other form is source syntax, a global
+    application chain included.
 
     It says nothing about region references: a source region body is typed
     after being opened with an atom (design §1.3), so `RFree` occurs in
@@ -377,7 +450,7 @@ let rec is_source (e: exp) : Tot bool (decreases e) =
   | EJump _ es -> is_source_exps es
   | EHandle e h -> is_source e && is_source h.h_ret && is_source_cls h.h_clauses
   | ERegion _ es e -> is_source_exps es && is_source e
-  | ESpine _ _ | EMatch _ _ | EOpenEffC _ _ | EForce _ | EFill _ _
+  | EMatch _ _ | EOpenEffC _ _ | EForce _ | EFill _ _
   | ERegionOpen _ _ _ | EOpaque _ _ -> false
 
 and is_source_exps (es: list exp) : Tot bool (decreases es) =

@@ -203,7 +203,6 @@ Expressions, decision trees, occurrences, handlers, and clauses are mutually ind
 
 The run-time forms of spec 06 §Run-time forms belong to the same type of expressions:
 
-- `ESpine` is a global applied to an argument spine, `M.g ς`, which only reduction produces.
 - `EMatch` descends a decision tree.
 - `EOpenEffC` widens the ambient effect row of a computation.
 - `EForce` and `EFill` operate on by-need locations.
@@ -211,6 +210,14 @@ The run-time forms of spec 06 §Run-time forms belong to the same type of expres
 - `EOpaque` is an opaque value returned by a foreign implementation.
 
 The predicate `is_source` excludes these forms.
+
+**A global applied to arguments has a single representation.** It is the chain of `EApp`, `ETyApp`, and `ECApp` over `EGlobal q ks`, and chains are source syntax. The specification's argument spine `ς` is a view of the chain: `decompose_global_app` returns the head, its kind vector, and the type, constraint, and value arguments in the order they are written. `Stella.Core.Spine` walks the declared type scheme along these arguments, as the specification's spine cursor does:
+
+- a type argument consumes a `forall` and extends the substitution;
+- a constraint argument consumes a constraint arrow;
+- a value argument consumes a function arrow.
+
+A chain is *saturated* when the unconsumed part of the **declared** type is none of these three. An arrow that appears only after instantiation does not count. A constructor-headed chain whose value arguments are values is a value. A foreign-headed chain is a value while it is unsaturated, and a redex once it is saturated with value arguments. Function types are recognized through the class Σ records for the function type constructor (§4.1).
 
 `fail` is derived notation (spec 03 §Partiality) and is a function rather than a constructor. Its expansion names the effect `Partial` and the constructor `Prim.Unit`, which are passed to it as parameters, and the result type `τ`.
 
@@ -231,17 +238,18 @@ Evaluation contexts are defunctionalized: an evaluation context is a list of fra
 
 `Σ` is a parameter of every judgement and never changes during checking (spec 05 §Contexts). It is a record of lookup functions keyed by qualified names (`Stella.Core.Sig`):
 
-- **`tycons`**: the number of kind variables of the scheme, the kind, and the class. The class is either intrinsic, with a canonical-value class (literal, function, record, variant, or opaque), or data, with the constructor names;
+- **`tycons`**: the number of kind variables of the scheme, the kind, and the class. The class is either intrinsic, with a canonical-value class (literal, function, record, variant, or opaque), or data, with the constructor names. Function types are the applications of a constructor whose class is function, and the saturation of an application chain (§3) consults this class;
 - **`ctors`**: the owning type, tag, arity, number of kind variables, and type;
 - **`effects`**: the kinds of the parameters, and for each operation its signature `forall b̄. σ ->* τ` (index order as in §3.1);
 - **`foreigns`**: the number of kind variables, the type, and whether the declaration asserts `#observ(none)`;
 - **`values`**: the number of kind variables and the type.
 
-The judgements assume a well-formed `Σ` (`Stella.Core.Sig.Wf`). Its kinding conditions are:
+The judgements assume a well-formed `Σ` (`Stella.Core.Sig.Wf`). Its conditions are:
 
 - a type constructor's kind is a well-formed quantifiable kind that produces `Type`;
 - an effect's parameters are quantifiable;
-- every declared type is kinded at `Type` under its kind variables.
+- every declared type is kinded at `Type` under its kind variables;
+- a name is at most one of a data constructor, a foreign, and a top-level value. The lookup that classifies the head of an application chain (§3) is defined only for a name recorded in exactly one of these tables.
 
 ### 4.2 The local context Γ
 
@@ -308,4 +316,4 @@ This formalization differs from the specification, or fills gaps in it, at the p
 | The run-time form `match θ dt` has no typing rule (spec 06 §Run-time forms). | A typing rule requires the values in `θ` to agree with the occurrence context. |
 | The erased reduction relation `→ᵤ` used by the erasure property is not defined (spec 06 §Erasure). | It is defined before the erasure property is stated. |
 | The decision-tree form `fail` stands for `leaf (perform Partial.abort [τ] Prim.Unit)`, but the tree grammar does not write `τ` (spec 04 §Decision trees). | The result type is an explicit argument of `fail` (§3). |
-| A spine `M.g ς` is not listed among the run-time forms (spec 06 §Run-time forms), although only reduction produces one. | `ESpine` is a run-time form (§3). |
+| The specification writes a global applied to arguments in two ways: as an application chain, which the value restriction admits as the body of a `Λ` (spec 04 §Value forms, e.g. `Λ a. M.Cons [a] v1 v2`), and as a run-time spine `M.g ς` (spec 06 §Values), with formation steps turning the first into the second. No evaluation context goes under `Λ`, so such a body is a static value form but not a run-time value, and the term is stuck, which contradicts progress. | There is no spine syntax: the chain is the only form and the spine is a view of it (§3). Reduction is the specification's up to the formation steps, which are administrative and do not exist here. |

@@ -106,7 +106,6 @@ let rec rmap_exp (f: nat -> region_ref -> region_ref) (d: nat) (e: exp) : Tot ex
   | ERegion l es b -> ERegion (rmap_layout (f d) l) (rmap_exps f d es) (rmap_exp f (d + 1) b)
   | EReadCell r k -> EReadCell (f d r) (rmap_key (f d) k)
   | EWriteCell r k b -> EWriteCell (f d r) (rmap_key (f d) k) (rmap_exp f d b)
-  | ESpine q sp -> ESpine q (rmap_spine f d sp)
   | EMatch th dt -> EMatch (rmap_exps f d th) (rmap_dt f d dt)
   | EOpenEffC t b -> EOpenEffC (rmap_ty (f d) t) (rmap_exp f d b)
   | EFill nu b -> EFill nu (rmap_exp f d b)
@@ -130,15 +129,6 @@ and rmap_cells (f: nat -> region_ref -> region_ref) (d: nat) (th: list (key & ex
   match th with
   | [] -> []
   | (k, e) :: th -> (rmap_key (f d) k, rmap_exp f d e) :: rmap_cells f d th
-
-and rmap_spine (f: nat -> region_ref -> region_ref) (d: nat) (sp: list spine_arg)
-  : Tot (list spine_arg) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds kl :: sp -> SKinds kl :: rmap_spine f d sp
-  | STy t :: sp -> STy (rmap_ty (f d) t) :: rmap_spine f d sp
-  | SConstr :: sp -> SConstr :: rmap_spine f d sp
-  | SVal v :: sp -> SVal (rmap_exp f d v) :: rmap_spine f d sp
 
 and rmap_dt (f: nat -> region_ref -> region_ref) (d: nat) (dt: dtree) : Tot dtree (decreases dt) =
   match dt with
@@ -299,7 +289,6 @@ let rec lc_exp_at (n: nat) (e: exp) : Tot bool (decreases e) =
   | ERegion l es b -> lc_layout_at n l && lc_exps_at n es && lc_exp_at (n + 1) b
   | EReadCell r k -> lc_rr n r && lc_key n k
   | EWriteCell r k b -> lc_rr n r && lc_key n k && lc_exp_at n b
-  | ESpine _ sp -> lc_spine_at n sp
   | EMatch th dt -> lc_exps_at n th && lc_dt_at n dt
   | EOpenEffC t b -> lc_ty_at n t && lc_exp_at n b
   | EFill _ b -> lc_exp_at n b
@@ -320,14 +309,6 @@ and lc_cells_at (n: nat) (th: list (key & exp)) : Tot bool (decreases th) =
   match th with
   | [] -> true
   | (k, e) :: th -> lc_key n k && lc_exp_at n e && lc_cells_at n th
-
-and lc_spine_at (n: nat) (sp: list spine_arg) : Tot bool (decreases sp) =
-  match sp with
-  | [] -> true
-  | SKinds _ :: sp -> lc_spine_at n sp
-  | STy t :: sp -> lc_ty_at n t && lc_spine_at n sp
-  | SConstr :: sp -> lc_spine_at n sp
-  | SVal v :: sp -> lc_exp_at n v && lc_spine_at n sp
 
 and lc_dt_at (n: nat) (dt: dtree) : Tot bool (decreases dt) =
   match dt with
@@ -442,7 +423,6 @@ let rec frn_exp (e: exp) : Tot (list atom) (decreases e) =
   | ERegion l es b -> frn_layout l @ frn_exps es @ frn_exp b
   | EReadCell r k -> frn_rr r @ frn_key k
   | EWriteCell r k b -> frn_rr r @ frn_key k @ frn_exp b
-  | ESpine _ sp -> frn_spine sp
   | EMatch th dt -> frn_exps th @ frn_dt dt
   | EOpenEffC t b -> frn_ty t @ frn_exp b
   | EFill _ b -> frn_exp b
@@ -463,14 +443,6 @@ and frn_cells (th: list (key & exp)) : Tot (list atom) (decreases th) =
   match th with
   | [] -> []
   | (k, e) :: th -> frn_key k @ frn_exp e @ frn_cells th
-
-and frn_spine (sp: list spine_arg) : Tot (list atom) (decreases sp) =
-  match sp with
-  | [] -> []
-  | SKinds _ :: sp -> frn_spine sp
-  | STy t :: sp -> frn_ty t @ frn_spine sp
-  | SConstr :: sp -> frn_spine sp
-  | SVal v :: sp -> frn_exp v @ frn_spine sp
 
 and frn_dt (dt: dtree) : Tot (list atom) (decreases dt) =
   match dt with

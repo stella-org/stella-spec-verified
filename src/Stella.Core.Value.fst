@@ -4,6 +4,8 @@
 module Stella.Core.Value
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Sig
+open Stella.Core.Spine
 open Stella.Core.Subst.Lemmas.Typ
 open Stella.Core.Subst.Lemmas.TyExp
 module L = FStar.List.Tot
@@ -39,7 +41,6 @@ let rec jp_scoped_mono (n: nat) (m: nat) (e: exp)
   | EOpenEff _ b -> jp_scoped_mono n m b
   | ERegion _ es b -> jp_scoped_mono_exps n m es; jp_scoped_mono 0 0 b
   | EWriteCell _ _ b -> jp_scoped_mono n m b
-  | ESpine _ sp -> jp_scoped_mono_spine n m sp
   | EMatch th dt -> jp_scoped_mono_exps n m th; jp_scoped_mono_dt n m dt
   | EOpenEffC _ b -> jp_scoped_mono n m b
   | EFill _ b -> jp_scoped_mono 0 0 b
@@ -68,17 +69,6 @@ and jp_scoped_mono_cells (n: nat) (m: nat) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> jp_scoped_mono n m e; jp_scoped_mono_cells n m th
-
-and jp_scoped_mono_spine (n: nat) (m: nat) (sp: list spine_arg)
-  : Lemma (requires n <= m /\ jp_scoped_spine n sp)
-          (ensures jp_scoped_spine m sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> jp_scoped_mono_spine n m sp
-  | STy _ :: sp -> jp_scoped_mono_spine n m sp
-  | SConstr :: sp -> jp_scoped_mono_spine n m sp
-  | SVal v :: sp -> jp_scoped_mono n m v; jp_scoped_mono_spine n m sp
 
 and jp_scoped_mono_dt (n: nat) (m: nat) (dt: dtree)
   : Lemma (requires n <= m /\ jp_scoped_dt n dt)
@@ -154,7 +144,6 @@ let rec ren_jp_scoped (n: nat) (xi: ren) (e: exp)
   | EOpenEff _ b -> ren_jp_scoped n xi b
   | ERegion _ es b -> ren_jp_scoped_exps n xi es; ren_jp_scoped 0 xi b
   | EWriteCell _ _ b -> ren_jp_scoped n xi b
-  | ESpine _ sp -> ren_jp_scoped_spine n xi sp
   | EMatch th dt -> ren_jp_scoped_exps n xi th; ren_jp_scoped_dt n xi dt
   | EOpenEffC _ b -> ren_jp_scoped n xi b
   | EFill _ b -> ren_jp_scoped 0 xi b
@@ -183,17 +172,6 @@ and ren_jp_scoped_cells (n: nat) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> ren_jp_scoped n xi e; ren_jp_scoped_cells n xi th
-
-and ren_jp_scoped_spine (n: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (requires jp_scoped_spine n sp /\ (forall (j: nat). j < n ==> xi j == j))
-          (ensures ren_jp_spine xi sp == sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> ren_jp_scoped_spine n xi sp
-  | STy _ :: sp -> ren_jp_scoped_spine n xi sp
-  | SConstr :: sp -> ren_jp_scoped_spine n xi sp
-  | SVal v :: sp -> ren_jp_scoped n xi v; ren_jp_scoped_spine n xi sp
 
 and ren_jp_scoped_dt (n: nat) (xi: ren) (dt: dtree)
   : Lemma (requires jp_scoped_dt n dt /\ (forall (j: nat). j < n ==> xi j == j))
@@ -266,7 +244,6 @@ let rec jp_scoped_ren_tm (n: nat) (xi: ren) (e: exp)
   | EOpenEff _ b -> jp_scoped_ren_tm n xi b
   | ERegion _ es b -> jp_scoped_ren_tm_exps n xi es; jp_scoped_ren_tm 0 xi b
   | EWriteCell _ _ b -> jp_scoped_ren_tm n xi b
-  | ESpine _ sp -> jp_scoped_ren_tm_spine n xi sp
   | EMatch th dt -> jp_scoped_ren_tm_exps n xi th; jp_scoped_ren_tm_dt n xi dt
   | EOpenEffC _ b -> jp_scoped_ren_tm n xi b
   | EFill _ b -> jp_scoped_ren_tm 0 xi b
@@ -292,16 +269,6 @@ and jp_scoped_ren_tm_cells (n: nat) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> jp_scoped_ren_tm n xi e; jp_scoped_ren_tm_cells n xi th
-
-and jp_scoped_ren_tm_spine (n: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (ensures jp_scoped_spine n (ren_tm_spine xi sp) == jp_scoped_spine n sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> jp_scoped_ren_tm_spine n xi sp
-  | STy _ :: sp -> jp_scoped_ren_tm_spine n xi sp
-  | SConstr :: sp -> jp_scoped_ren_tm_spine n xi sp
-  | SVal v :: sp -> jp_scoped_ren_tm n xi v; jp_scoped_ren_tm_spine n xi sp
 
 and jp_scoped_ren_tm_dt (n: nat) (xi: ren) (dt: dtree)
   : Lemma (ensures jp_scoped_dt n (ren_tm_dt xi dt) == jp_scoped_dt n dt)
@@ -368,7 +335,6 @@ let rec jp_scoped_sub_ty (n: nat) (sigma: tsub) (e: exp)
   | EOpenEff _ b -> jp_scoped_sub_ty n sigma b
   | ERegion _ es b -> jp_scoped_sub_ty_exps n sigma es; jp_scoped_sub_ty 0 sigma b
   | EWriteCell _ _ b -> jp_scoped_sub_ty n sigma b
-  | ESpine _ sp -> jp_scoped_sub_ty_spine n sigma sp
   | EMatch th dt -> jp_scoped_sub_ty_exps n sigma th; jp_scoped_sub_ty_dt n sigma dt
   | EOpenEffC _ b -> jp_scoped_sub_ty n sigma b
   | EFill _ b -> jp_scoped_sub_ty 0 sigma b
@@ -394,16 +360,6 @@ and jp_scoped_sub_ty_cells (n: nat) (sigma: tsub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> jp_scoped_sub_ty n sigma e; jp_scoped_sub_ty_cells n sigma th
-
-and jp_scoped_sub_ty_spine (n: nat) (sigma: tsub) (sp: list spine_arg)
-  : Lemma (ensures jp_scoped_spine n (sub_ty_spine sigma sp) == jp_scoped_spine n sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> jp_scoped_sub_ty_spine n sigma sp
-  | STy _ :: sp -> jp_scoped_sub_ty_spine n sigma sp
-  | SConstr :: sp -> jp_scoped_sub_ty_spine n sigma sp
-  | SVal v :: sp -> jp_scoped_sub_ty n sigma v; jp_scoped_sub_ty_spine n sigma sp
 
 and jp_scoped_sub_ty_dt (n: nat) (sigma: tsub) (dt: dtree)
   : Lemma (ensures jp_scoped_dt n (sub_ty_dt sigma dt) == jp_scoped_dt n dt)
@@ -484,7 +440,6 @@ let rec jp_scoped_ren_jp (n: nat) (m: nat) (xi: ren) (e: exp)
   | EOpenEff _ b -> jp_scoped_ren_jp n m xi b
   | ERegion _ es b -> jp_scoped_ren_jp_exps n m xi es; jp_scoped_ren_jp 0 0 xi b
   | EWriteCell _ _ b -> jp_scoped_ren_jp n m xi b
-  | ESpine _ sp -> jp_scoped_ren_jp_spine n m xi sp
   | EMatch th dt -> jp_scoped_ren_jp_exps n m xi th; jp_scoped_ren_jp_dt n m xi dt
   | EOpenEffC _ b -> jp_scoped_ren_jp n m xi b
   | EFill _ b -> jp_scoped_ren_jp 0 0 xi b
@@ -516,18 +471,6 @@ and jp_scoped_ren_jp_cells (n: nat) (m: nat) (xi: ren) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> jp_scoped_ren_jp n m xi e; jp_scoped_ren_jp_cells n m xi th
-
-and jp_scoped_ren_jp_spine (n: nat) (m: nat) (xi: ren) (sp: list spine_arg)
-  : Lemma (requires jp_scoped_spine n sp /\
-                    (forall (j: nat). j < n ==> xi j < m))
-          (ensures jp_scoped_spine m (ren_jp_spine xi sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> jp_scoped_ren_jp_spine n m xi sp
-  | STy _ :: sp -> jp_scoped_ren_jp_spine n m xi sp
-  | SConstr :: sp -> jp_scoped_ren_jp_spine n m xi sp
-  | SVal v :: sp -> jp_scoped_ren_jp n m xi v; jp_scoped_ren_jp_spine n m xi sp
 
 and jp_scoped_ren_jp_dt (n: nat) (m: nat) (xi: ren) (dt: dtree)
   : Lemma (requires jp_scoped_dt n dt /\
@@ -629,7 +572,6 @@ let rec jp_scoped_sub_tm (n: nat) (sigma: esub) (e: exp)
   | EOpenEff _ b -> jp_scoped_sub_tm n sigma b
   | ERegion _ es b -> jp_scoped_sub_tm_exps n sigma es; jp_scoped_sub_tm 0 sigma b
   | EWriteCell _ _ b -> jp_scoped_sub_tm n sigma b
-  | ESpine _ sp -> jp_scoped_sub_tm_spine n sigma sp
   | EMatch th dt -> jp_scoped_sub_tm_exps n sigma th; jp_scoped_sub_tm_dt n sigma dt
   | EOpenEffC _ b -> jp_scoped_sub_tm n sigma b
   | EFill _ b -> jp_scoped_sub_tm 0 sigma b
@@ -661,18 +603,6 @@ and jp_scoped_sub_tm_cells (n: nat) (sigma: esub) (th: list (key & exp))
   match th with
   | [] -> ()
   | (_, e) :: th -> jp_scoped_sub_tm n sigma e; jp_scoped_sub_tm_cells n sigma th
-
-and jp_scoped_sub_tm_spine (n: nat) (sigma: esub) (sp: list spine_arg)
-  : Lemma (requires jp_scoped_spine n sp /\
-                    (forall (i: nat). jp_scoped 0 (sigma i)))
-          (ensures jp_scoped_spine n (sub_tm_spine sigma sp))
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SKinds _ :: sp -> jp_scoped_sub_tm_spine n sigma sp
-  | STy _ :: sp -> jp_scoped_sub_tm_spine n sigma sp
-  | SConstr :: sp -> jp_scoped_sub_tm_spine n sigma sp
-  | SVal v :: sp -> jp_scoped_sub_tm n sigma v; jp_scoped_sub_tm_spine n sigma sp
 
 and jp_scoped_sub_tm_dt (n: nat) (sigma: esub) (dt: dtree)
   : Lemma (requires jp_scoped_dt n dt /\
@@ -720,38 +650,116 @@ and jp_scoped_sub_tm_cls (n: nat) (sigma: esub) (cs: list clause)
     jp_tyup_esub nb sigma; jp_upn_esub 1 (tyup_esub nb sigma);
     jp_scoped_sub_tm n (up_esub (tyup_esub nb sigma)) b; jp_scoped_sub_tm_cls n sigma cs
 
-let rec value_jp_scoped (sv: qname -> list spine_arg -> bool) (n: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures jp_scoped 0 v) (decreases v) =
-  match v with
-  | ETyLam _ _ | ECLam _ _ | ELit _ | ELam _ _ _ | ERecEmpty | EOpaque _ _ -> ()
-  | EInject _ _ v | EWeaken _ _ v | EOpenEff _ v -> value_jp_scoped sv n v
-  | EExtend _ v1 v2 -> value_jp_scoped sv n v1; value_jp_scoped sv n v2
-  | ESpine _ sp -> value_spine_jp_scoped sv n sp
+let rec args_values_snoc (sg: sig) (args: list spine_arg) (a: spine_arg)
+  : Lemma (ensures args_values sg (L.append args [a]) ==
+                   (args_values sg args && args_values sg [a]))
+          (decreases args) =
+  match args with
+  | [] -> ()
+  | _ :: args -> args_values_snoc sg args a
+
+let rec chain_values_view (sg: sig) (e: exp)
+  : Lemma (ensures chain_values sg e ==
+                   (match decompose_global_app e with
+                    | Some (_, _, args) -> args_values sg args
+                    | None -> false))
+          (decreases e) =
+  match e with
+  | EApp f v ->
+    chain_values_view sg f;
+    (match decompose_global_app f with
+     | Some (_, _, args) -> args_values_snoc sg args (SVal v)
+     | None -> ())
+  | ETyApp f t ->
+    chain_values_view sg f;
+    (match decompose_global_app f with
+     | Some (_, _, args) -> args_values_snoc sg args (STy t)
+     | None -> ())
+  | ECApp f ->
+    chain_values_view sg f;
+    (match decompose_global_app f with
+     | Some (_, _, args) -> args_values_snoc sg args SConstr
+     | None -> ())
   | _ -> ()
 
-and value_spine_jp_scoped (sv: qname -> list spine_arg -> bool) (n: nat) (sp: list spine_arg)
-  : Lemma (requires is_value_spine sv sp /\ jp_scoped_spine n sp) (ensures jp_scoped_spine 0 sp)
-          (decreases sp) =
-  match sp with
-  | [] -> ()
-  | SVal v :: sp -> value_jp_scoped sv n v; value_spine_jp_scoped sv n sp
-  | _ :: sp -> value_spine_jp_scoped sv n sp
+let foreign_redex_not_value (sg: sig) (e: exp)
+  : Lemma (requires foreign_redex sg e) (ensures not (is_value sg e)) =
+  ()
 
-let value_jp_scoped_any (sv: qname -> list spine_arg -> bool) (n m: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures jp_scoped m v) =
-  value_jp_scoped sv n v; jp_scoped_mono 0 m v
+let rec value_jp_scoped (sg: sig) (n: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures jp_scoped 0 v)
+          (decreases %[v; 1]) =
+  match v with
+  | ETyLam _ _ | ECLam _ _ | ELit _ | ELam _ _ _ | ERecEmpty | EOpaque _ _ -> ()
+  | EInject _ _ v | EWeaken _ _ v | EOpenEff _ v -> value_jp_scoped sg n v
+  | EExtend _ v1 v2 -> value_jp_scoped sg n v1; value_jp_scoped sg n v2
+  | EGlobal _ _ | EApp _ _ | ETyApp _ _ | ECApp _ -> chain_values_jp_scoped sg n v
+  | _ -> ()
 
-let value_ren_jp (sv: qname -> list spine_arg -> bool) (n: nat) (xi: ren) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures ren_jp xi v == v) =
-  value_jp_scoped sv n v; ren_jp_scoped 0 xi v
+(* The value arguments of a chain are values, and the rest of it holds no
+   term, so the chain is scoped as its value arguments are. *)
+and chain_values_jp_scoped (sg: sig) (n: nat) (e: exp)
+  : Lemma (requires chain_values sg e /\ jp_scoped n e) (ensures jp_scoped 0 e)
+          (decreases %[e; 0]) =
+  match e with
+  | EGlobal _ _ -> ()
+  | EApp f v -> chain_values_jp_scoped sg n f; value_jp_scoped sg n v
+  | ETyApp f _ | ECApp f -> chain_values_jp_scoped sg n f
 
-let letjoin_value (sv: qname -> list spine_arg -> bool) (n: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped (n + 1) v) (ensures ren_jp jp_down v == v) =
-  value_ren_jp sv (n + 1) jp_down v
+let value_jp_scoped_any (sg: sig) (n m: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures jp_scoped m v) =
+  value_jp_scoped sg n v; jp_scoped_mono 0 m v
 
-let jp_scoped_subst1_value (sv: qname -> list spine_arg -> bool) (n k: nat) (v e: exp)
-  : Lemma (requires jp_scoped n e /\ is_value sv v /\ jp_scoped k v)
+let value_ren_jp (sg: sig) (n: nat) (xi: ren) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures ren_jp xi v == v) =
+  value_jp_scoped sg n v; ren_jp_scoped 0 xi v
+
+let letjoin_value (sg: sig) (n: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped (n + 1) v) (ensures ren_jp jp_down v == v) =
+  value_ren_jp sg (n + 1) jp_down v
+
+let jp_scoped_subst1_value (sg: sig) (n k: nat) (v e: exp)
+  : Lemma (requires jp_scoped n e /\ is_value sg v /\ jp_scoped k v)
           (ensures jp_scoped n (subst1_tm v e)) =
-  value_jp_scoped sv k v;
+  value_jp_scoped sg k v;
   introduce forall (i: nat). jp_scoped 0 (scons v evar i) with ();
   jp_scoped_sub_tm n (scons v evar) e
+
+(* The example of spec 06 §Saturation is a position in the declared type,
+   `foreign id : forall a. a -> a` used at `Int -> Int`, in a signature
+   holding only `Prim.Function`, `Prim.Int` and `M.id`. *)
+let ex_function : qname = { qmod = ["Prim"]; qid = "Function" }
+let ex_int_q : qname = { qmod = ["Prim"]; qid = "Int" }
+let ex_id : qname = { qmod = ["M"]; qid = "id" }
+let ex_int : typ = TCon ex_int_q []
+let ex_int_to_int : typ = fun_ty ex_function ex_int TRowEmpty ex_int
+
+let ex_sig : sig = {
+  tycons = (fun q ->
+    if q = ex_function then
+      Some { tc_nk = 0;
+             tc_kind = KArrow KType (KArrow (KRow EEffect) (KArrow KType KType));
+             tc_class = TcIntrinsic ClsFunction }
+    else if q = ex_int_q then
+      Some { tc_nk = 0; tc_kind = KType; tc_class = TcIntrinsic ClsLiteral }
+    else None);
+  effects = (fun _ -> None);
+  ctors = (fun _ -> None);
+  foreigns = (fun q ->
+    if q = ex_id then
+      Some { fr_nk = 0;
+             fr_ty = TForall KType (fun_ty ex_function (TVar 0) TRowEmpty (TVar 0));
+             fr_observ_none = true }
+    else None);
+  values = (fun _ -> None);
+}
+
+(* `M.id` expects a type, `M.id [Int -> Int]` one value, and
+   `M.id [Int -> Int] f` is saturated although `θ(a)` is a function type,
+   so `(M.id [Int -> Int] f) 0` has no cursor. *)
+let _ = assert_norm (is_value ex_sig (recompose ex_id [] []))
+let _ = assert_norm (is_value ex_sig (recompose ex_id [] [STy ex_int_to_int]))
+let _ = assert_norm (foreign_redex ex_sig (recompose ex_id [] [STy ex_int_to_int; SVal (ELam ex_int TRowEmpty (EVar 0))]))
+let _ = assert_norm (None? (spine_cursor ex_sig ex_id []
+                             [STy ex_int_to_int; SVal (ELam ex_int TRowEmpty (EVar 0));
+                              SVal (ELit (LInt 0l))]))

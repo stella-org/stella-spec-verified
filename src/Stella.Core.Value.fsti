@@ -37,6 +37,8 @@
 module Stella.Core.Value
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Sig
+open Stella.Core.Spine
 open Stella.Core.Subst.Lemmas.Typ
 open Stella.Core.Subst.Lemmas.TyExp
 module L = FStar.List.Tot
@@ -70,7 +72,6 @@ let rec jp_scoped (n: nat) (e: exp) : Tot bool (decreases e) =
   | EOpenEff _ b -> jp_scoped n b
   | ERegion _ es b -> jp_scoped_exps n es && jp_scoped 0 b
   | EWriteCell _ _ b -> jp_scoped n b
-  | ESpine _ sp -> jp_scoped_spine n sp
   | EMatch th dt -> jp_scoped_exps n th && jp_scoped_dt n dt
   | EOpenEffC _ b -> jp_scoped n b
   | EFill _ b -> jp_scoped 0 b
@@ -90,14 +91,6 @@ and jp_scoped_cells (n: nat) (th: list (key & exp)) : Tot bool (decreases th) =
   match th with
   | [] -> true
   | (_, e) :: th -> jp_scoped n e && jp_scoped_cells n th
-
-and jp_scoped_spine (n: nat) (sp: list spine_arg) : Tot bool (decreases sp) =
-  match sp with
-  | [] -> true
-  | SKinds _ :: sp -> jp_scoped_spine n sp
-  | STy _ :: sp -> jp_scoped_spine n sp
-  | SConstr :: sp -> jp_scoped_spine n sp
-  | SVal v :: sp -> jp_scoped n v && jp_scoped_spine n sp
 
 and jp_scoped_dt (n: nat) (dt: dtree) : Tot bool (decreases dt) =
   match dt with
@@ -193,51 +186,98 @@ val jp_scoped_sub_tm_dt (n: nat) (sigma: esub) (dt: dtree)
 
 (** * Values (spec 06 §Values)
 
-    `is_value sv e` is the value grammar of spec 06 §Values:
+    `is_value sg e` is the value grammar of spec 06 §Values:
 
-      v ::= c | λ (x : τ) / ρ . e | Λ (a : κ). v | Λ (_ : C). v | M.g ς
+      v ::= c | λ (x : τ) / ρ . e | Λ (a : κ). v | Λ (_ : C). v
+          | M.Ctor ς | M.f ς  (ς not saturated)
           | {} | extend k v1 v2 | inject k [ρ] v | weaken k [τ] v
           | openEff [ρ] v | opaque ω [τ]
 
-    where every value entry of the spine `ς` is a value. Whether a spine
-    `M.g ς` is a value depends on `Σ`: a constructor spine always is, a
-    foreign spine only while it is not saturated. That condition is the
-    parameter `sv g ς`. `value_shaped = is_value any_spine` is the
-    `Σ`-independent shape, admitting every spine. *)
+    where `M.g ς` is a global application chain (design §3,
+    `decompose_global_app`) whose value arguments are all values
+    (`chain_values`). Whether its head makes it a value depends on `Σ`
+    (`value_head`):
 
-let rec is_value (sv: qname -> list spine_arg -> bool) (e: exp) : Tot bool (decreases e) =
+      - a chain headed by a data constructor is a value, saturated or not.
+        A constructor's arrows are pure and its result is a data type, never
+        an arrow, so an over-applied constructor chain is ill-typed and
+        needs no case of its own;
+      - a chain headed by a foreign is a value while its spine is not
+        saturated (`spine_unsaturated`, which requires the cursor to be
+        defined). A saturated one is a redex (`foreign_redex`).
+
+    The atomic reference `M.g [[κ̄]]` is the chain with no argument. A
+    global with a body to unfold, a top-level value, heads no value. *)
+
+let value_head (sg: sig) (e: exp) : bool =
+  match decompose_global_app e with
+  | Some (q, ks, args) ->
+    (match global_scheme sg q with
+     | Some (GCtor, _, _) -> true
+     | Some (GForeign, _, _) -> spine_unsaturated sg q ks args
+     | None -> false)
+  | None -> false
+
+let rec is_value (sg: sig) (e: exp) : Tot bool (decreases %[e; 1]) =
   match e with
   | ELit _ | ELam _ _ _ | ERecEmpty | EOpaque _ _ -> true
-  | ETyLam _ v | ECLam _ v | EInject _ _ v | EWeaken _ _ v | EOpenEff _ v -> is_value sv v
-  | EExtend _ v1 v2 -> is_value sv v1 && is_value sv v2
-  | ESpine g sp -> sv g sp && is_value_spine sv sp
+  | ETyLam _ v | ECLam _ v | EInject _ _ v | EWeaken _ _ v | EOpenEff _ v -> is_value sg v
+  | EExtend _ v1 v2 -> is_value sg v1 && is_value sg v2
+  | EGlobal _ _ | EApp _ _ | ETyApp _ _ | ECApp _ -> value_head sg e && chain_values sg e
   | _ -> false
 
-and is_value_spine (sv: qname -> list spine_arg -> bool) (sp: list spine_arg)
-  : Tot bool (decreases sp) =
-  match sp with
+(** `e` is a global application chain and each of its value arguments is a
+    value. *)
+and chain_values (sg: sig) (e: exp) : Tot bool (decreases %[e; 0]) =
+  match e with
+  | EGlobal _ _ -> true
+  | EApp f v -> chain_values sg f && is_value sg v
+  | ETyApp f _ | ECApp f -> chain_values sg f
+  | _ -> false
+
+(** Each value argument of a spine is a value. *)
+let rec args_values (sg: sig) (args: list spine_arg) : Tot bool (decreases args) =
+  match args with
   | [] -> true
-  | SVal v :: sp -> is_value sv v && is_value_spine sv sp
-  | _ :: sp -> is_value_spine sv sp
+  | SVal v :: args -> is_value sg v && args_values sg args
+  | _ :: args -> args_values sg args
 
-let any_spine (_: qname) (_: list spine_arg) : bool = true
+(** `chain_values` read through the view. *)
+val chain_values_view (sg: sig) (e: exp)
+  : Lemma (chain_values sg e ==
+           (match decompose_global_app e with
+            | Some (_, _, args) -> args_values sg args
+            | None -> false))
 
-let value_shaped (e: exp) : bool = is_value any_spine e
+(** `M.f ς` with `ς` saturated for the foreign `M.f` and every value argument
+    a value: the redex of `M.f ς → δ_f(values(ς))` (spec 06 §Forming and
+    reducing a spine). *)
+let foreign_redex (sg: sig) (e: exp) : bool =
+  match decompose_global_app e with
+  | Some (q, ks, args) ->
+    (match global_scheme sg q with
+     | Some (GForeign, _, _) -> spine_saturated sg q ks args && chain_values sg e
+     | _ -> false)
+  | None -> false
+
+(** A foreign redex is no value. *)
+val foreign_redex_not_value (sg: sig) (e: exp)
+  : Lemma (requires foreign_redex sg e) (ensures not (is_value sg e))
 
 (** * The join-point value lemma *)
 
 (** A scoped value is scoped under every join context: its join indices
     all stand under a `Δ`-discarding body. *)
-val value_jp_scoped (sv: qname -> list spine_arg -> bool) (n: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures jp_scoped 0 v)
+val value_jp_scoped (sg: sig) (n: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures jp_scoped 0 v)
 
 (** Hence it is scoped under any `m` join points. *)
-val value_jp_scoped_any (sv: qname -> list spine_arg -> bool) (n m: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures jp_scoped m v)
+val value_jp_scoped_any (sg: sig) (n m: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures jp_scoped m v)
 
 (** A scoped value has no free join index: every join renaming fixes it. *)
-val value_ren_jp (sv: qname -> list spine_arg -> bool) (n: nat) (xi: ren) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped n v) (ensures ren_jp xi v == v)
+val value_ren_jp (sg: sig) (n: nat) (xi: ren) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures ren_jp xi v == v)
 
 (** The renaming that removes join index 0 from scope, lowering the others
     (`0` itself is sent to `0`, but no index of a term it is applied to is
@@ -246,11 +286,11 @@ let jp_down (j: nat) : nat = if j = 0 then 0 else j - 1
 
 (** `letjoin j (x̄ : τ̄) : τ = e1 in v  →  v`: the value `v`, under the join
     binder, stands for itself outside it. *)
-val letjoin_value (sv: qname -> list spine_arg -> bool) (n: nat) (v: exp)
-  : Lemma (requires is_value sv v /\ jp_scoped (n + 1) v) (ensures ren_jp jp_down v == v)
+val letjoin_value (sg: sig) (n: nat) (v: exp)
+  : Lemma (requires is_value sg v /\ jp_scoped (n + 1) v) (ensures ren_jp jp_down v == v)
 
 (** A β-step, `let` or `bind` substitutes a value, which keeps the
     result scoped: `e[x := v]` is `jp_scoped n` when `e` is. *)
-val jp_scoped_subst1_value (sv: qname -> list spine_arg -> bool) (n k: nat) (v e: exp)
-  : Lemma (requires jp_scoped n e /\ is_value sv v /\ jp_scoped k v)
+val jp_scoped_subst1_value (sg: sig) (n k: nat) (v e: exp)
+  : Lemma (requires jp_scoped n e /\ is_value sg v /\ jp_scoped k v)
           (ensures jp_scoped n (subst1_tm v e))
