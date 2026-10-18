@@ -81,6 +81,14 @@ let add_assumps (g: ctx) (cs: list constr) : ctx = { g with assumps = L.append c
 (** Binding a term variable. *)
 let push_var (g: ctx) (t: typ) : ctx = { g with vars = t :: g.vars }
 
+(** Binding a telescope of term variables, pushed in written order, so that
+    the last one is index 0: the members of `letrec` and the parameters of a
+    join point (design §3.1). *)
+let rec push_vars (g: ctx) (ts: list typ) : Tot ctx (decreases ts) =
+  match ts with
+  | [] -> g
+  | t :: ts -> push_vars (push_var g t) ts
+
 (** `RegionKey (RFree a) ∉ TVar (d + j)` for every position `j` of `ks` that
     holds `Row Effect`. *)
 let rec region_facts (a: atom) (d: nat) (ks: list kind) : Tot (list constr) (decreases ks) =
@@ -99,6 +107,12 @@ let enter_region (g: ctx) (a: atom) (l: layout) : ctx =
   { g with
     facts = L.append (region_facts a 0 g.tvars) g.facts;
     regions = (a, l) :: g.regions }
+
+(** The facts of entering the region `a` alone, its name being in scope
+    already: the body of an open region frame `region⟨a⟩ θ in e`, whose name
+    is one of `Γ_R` (spec 06 §Run-time forms). *)
+let add_region_facts (g: ctx) (a: atom) : ctx =
+  { g with facts = L.append (region_facts a 0 g.tvars) g.facts }
 
 (** * Mapping the types stored in a context
 

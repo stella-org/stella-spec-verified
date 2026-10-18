@@ -53,7 +53,9 @@ A `region [ℓ] … in e` term binds the region name `ℓ` in `e`, its type anno
 
 Types bind no region names. The typing judgement opens a region body with an atom before checking it, so every type the judgement handles is *locally closed* for regions: it contains no dangling `RBound`. Substituting a locally closed type or term therefore needs no capture avoidance for region binders, which the specification otherwise requires (spec 05 §Basic rules).
 
-The typing rule for `region` uses **cofinite quantification**: the body must typecheck when opened with every atom outside some finite set. In F*, this is a constructor field of function type `(l:atom{l ∉ L}) -> typing …`, which is strictly positive. With this rule, weakening needs no lemma about renaming atoms.
+The typing rule for `region` uses **cofinite quantification**: the body must typecheck when opened with every atom outside some finite set `L`. In F*, this is a constructor field of function type `(l:atom{l ∉ L}) -> typing …`, which is strictly positive. With this rule, weakening needs no lemma about renaming atoms.
+
+`L` contains at least the region names in scope and the free region names of the body. The rule also kinds the answer type `β` and the residual row `ρ` in the context outside the region. A type kinded there is locally closed and mentions only region names in scope, so neither `β` nor `ρ` mentions the atom the body is opened with. This is the specification's escape condition `ℓ ∉ frn(β) ∪ frn(ρ)`.
 
 ## 2. Type equality, constraints, and kinding
 
@@ -226,7 +228,8 @@ Evaluation contexts are defunctionalized: an evaluation context is a list of fra
 ### 3.1 Index conventions
 
 - The last binder of a telescope is index 0. This matches the contexts of §4.2, whose heads are index 0. A specification-level substitution `τ[ā := τ̄]` replaces index `i` with the `i`-th element of `τ̄` counted from the end, that is, `sub_ty (list_tsub (rev τ̄))`.
-- The annotations of a handler clause, `x : σ` and `k : τ' -{ρ}-> β`, are under the clause's type binders.
+- The annotations of a handler clause, `x : σ` and `k : τ' -{ρ}-> β`, are under the clause's type binders. They are compared by `ty_eq` with the operation's signature instantiated at the effect's arguments, and with `ρ` and `β` shifted past the clause's `m` binders.
+- `perform k.op [σ̄]` on an element `E τ̄` instantiates the operation's argument and result types as `subst_ty 0 (rev σ̄) (subst_ty m (rev τ̄) σ)`, where `m = |σ̄|`. That is, the effect's parameters are instantiated first, under the operation's binders, and then the binders themselves.
 - `KVar i` refers to the binders of a kind scheme in the order they are written.
 - In an operation signature `forall (b̄ : κ̄'). σ ->* τ` of an effect `E (ā : κ̄)`, the operation's own binders `b̄` are inner and the effect's parameters `ā` are outer.
 - `EMatch` holds the values of the scrutinees. The value at an occurrence is computed by following the occurrence's projection path from its scrutinee.
@@ -247,9 +250,19 @@ Evaluation contexts are defunctionalized: an evaluation context is a list of fra
 The judgements assume a well-formed `Σ` (`Stella.Core.Sig.Wf`). Its conditions are:
 
 - a type constructor's kind is a well-formed quantifiable kind that produces `Type`;
-- an effect's parameters are quantifiable;
+- an effect's parameters are quantifiable, and its operations have distinct names;
 - every declared type is kinded at `Type` under its kind variables;
-- a name is at most one of a data constructor, a foreign, and a top-level value. The lookup that classifies the head of an application chain (§3) is defined only for a name recorded in exactly one of these tables.
+- a name is at most one of a data constructor, a foreign, and a top-level value. The lookup that classifies the head of an application chain (§3) covers constructors and foreigns, and the lookup that types a global covers all three tables. Both are defined only for a name recorded in exactly one table.
+
+The typing rules name the type constructors of `Prim` (`Stella.Core.Prim`), and `prim_wf` requires that `Σ` record them with the kinds and classes the rules assume:
+
+- `Function` has kind `Type -> Row Effect -> Type -> Type` and class function;
+- `Record` and `Variant` have kind `Row Type -> Type` and classes record and variant;
+- `Int`, `Number`, `String`, `Char`, and `Boolean` have kind `Type` and class literal;
+- `IO` has kind `Type -> Type` and class opaque;
+- `Unit` is a data type whose only constructor is `Prim.Unit`.
+
+No other type constructor has class function, record, or variant. The metatheory of the typing relation assumes `sig_ok`, which is `sig_wf` together with `prim_wf`.
 
 ### 4.2 The local context Γ
 
@@ -282,13 +295,26 @@ type ctx = {
 - the body of `region` and of an open frame `region⟨ℓ⟩`;
 - the initializers of `letrec`, and the subterm of `fill`.
 
+These places also put their subterm in tail position, except the initializers of `letrec` and the subterm of `fill`, which are out of tail position (spec 05 §Basic rules).
+
+**Tail position is a flag of the typing judgement**, separate from `Δ`:
+
+- a child that is not in tail position is typed with the flag false and keeps `Δ`;
+- `jump` requires the flag;
+- the definition of a `letjoin` is in tail position wherever the `letjoin` stands;
+- the continuation of a `letjoin`, the body of a `let` or `letrec`, and the leaves of a decision tree inherit the flag.
+
+A join definition in a non-tail position may therefore jump to an outer join point. Such a definition is never reached at run time, because every jump to it would itself be out of tail position.
+
 So `Δ` is never carried under a type binder, and its types never need shifting.
 
 The syntactic predicate `jp_scoped n e` (`Stella.Core.Value`) holds when every `jump` in `e` targets a join point in scope, where `n` is the size of `Δ` at the root and `Δ` is emptied at the places above. Every well-typed term satisfies it. A `jp_scoped` value has no free join index, so the reduction `letjoin j … in v → v` returns `v` unchanged.
 
 ### 4.4 The occurrence context Ω
 
-`Ω` maps occurrences to types and exists only while a decision tree is checked. An occurrence is a scrutinee index followed by a path of projections (spec 04 §Occurrences).
+`Ω` maps occurrences to types and exists only while a decision tree is checked. An occurrence is a scrutinee index followed by a path of projections (spec 04 §Occurrences). `Ω` is a list, looked up most recent first.
+
+The run-time form `match θ dt` descends a tree whose dispatches may already have refined `Ω`. Its typing rule writes an `Ω` in the derivation and justifies each entry `o ↦ τ` by a value of type `τ`. That value is found by following the path of `o` from the scrutinee values in `θ`.
 
 ### 4.5 Run-time contexts and the store
 
@@ -300,10 +326,15 @@ Run-time terms involve two global contexts besides `Σ` (spec 06 §Run-time form
 `Γ_R` is the `regions` component of the context in which a closed run-time term is typed, so extending `Γ_R` is an instance of weakening the context (§4.2). `Γ_N` is a separate parameter of the term typing judgement:
 
 ```
-typing : sig -> lctx -> ctx -> jctx -> exp -> typ -> (row:typ) -> Type
+typing    : sig -> lctx -> ctx -> jctx -> (tail:bool) -> exp -> typ -> (row:typ) -> Type
+dt_typing : sig -> lctx -> ctx -> jctx -> (tail:bool) -> octx -> dtree -> typ -> (row:typ) -> Type
 ```
 
+The two are mutually inductive, with list and clause judgements beside them (`Stella.Core.Typing`).
+
 When the typing rule opens a region statically, it uses an atom that does not occur in `ctx.regions`. Store typing `⊢ N : Γ_N` is as in spec 06 §Run-time forms.
+
+The typing rules read `Γ_N` unchanged under every binder, so its types must be closed: `lctx_ok` requires each of them to be kinded at `Type` with no kind variable, type variable, or constraint in scope. A location type may mention a run-time region, because a `letrec` inside an open region can give a member a type that mentions the region. So the regions of `Γ_R` are in scope when location types are kinded. Region atoms are never captured by a binder.
 
 ## 5. Initialization safety
 
@@ -341,3 +372,8 @@ This formalization differs from the specification, or fills gaps in it, at the p
 | The decision-tree form `fail` stands for `leaf (perform Partial.abort [τ] Prim.Unit)`, but the tree grammar does not write `τ` (spec 04 §Decision trees). | The result type is an explicit argument of `fail` (§3). |
 | The specification writes a global applied to arguments in two ways: as an application chain, which the value restriction admits as the body of a `Λ` (spec 04 §Value forms, e.g. `Λ a. M.Cons [a] v1 v2`), and as a run-time spine `M.g ς` (spec 06 §Values), with formation steps turning the first into the second. No evaluation context goes under `Λ`, so such a body is a static value form but not a run-time value, and the term is stuck, which contradicts progress. | There is no spine syntax: the chain is the only form and the spine is a view of it (§3). Reduction is the specification's up to the formation steps, which are administrative and do not exist here. |
 | The initialization-safety judgement gives no rule for the run-time forms (spec 10 §What an initializer reads), but reduction puts `force ν` into the initializers of a nested group (spec 06 §Recursive bindings). | Run-time forms have rules (§5), so the judgement is defined on every term that reduction produces. |
+| `F(k)`, the payload a row's normal form holds at `k`, is read off the normal form in the rules for `perform`, `switchKey`, and the record-field occurrence (spec 05). Here a normal form holds canonical payloads, not types. | The derivation writes a type whose canonical form is the payload and which is kinded at `Type`. Kinding the row makes the entry unique, by sharpness. |
+| The field types of a constructor in `switchCtor` are `τ_ij[ā := σ̄]` for `Ctor_i : forall ā. τ̄_i -> T ā` (spec 05 §Join points and decision trees). | The field types are read from the constructor's declared type, instantiated at the kind arguments and type arguments of the scrutinee's type. A well-formed `Σ` gives a constructor the kind variables of its type constructor. |
+| `region⟨ℓ⟩ θ` requires `dom(θ) = { k̄ }` (spec 06 §Run-time forms). | `θ` holds one value per cell, in the order of the layout. |
+| The rule for `openEffC [ρ] e` asks only `Γ ⊨ r # ρ` (spec 06 §Run-time forms), and the rule for `force ν` only `(ν : σ) ∈ Γ_N`. | Both rules also kind what they introduce (`ρ`, and `σ`), as the rules of the source forms do, so that every derivation's type and row are well kinded. |
+| Several source rules leave some of their annotations unkinded, such as the type of a `let` or the answer type of a `handle` (spec 05). | These annotations are kinded, as the Core type checker of the reference implementation does. |
