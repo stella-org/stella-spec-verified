@@ -55,7 +55,7 @@ Types bind no region names. The typing judgement opens a region body with an ato
 
 The typing rule for `region` uses **cofinite quantification**: the body must typecheck when opened with every atom outside some finite set `L`. In F*, this is a constructor field of function type `(l:atom{l ∉ L}) -> typing …`, which is strictly positive. With this rule, weakening needs no lemma about renaming atoms.
 
-`L` contains at least the region names in scope and the free region names of the body. The rule also kinds the answer type `β` and the residual row `ρ` in the context outside the region. A type kinded there is locally closed and mentions only region names in scope, so neither `β` nor `ρ` mentions the atom the body is opened with. This is the specification's escape condition `ℓ ∉ frn(β) ∪ frn(ρ)`.
+`L` contains at least the region names in scope and the free region names of the body. The rule also kinds the answer type `β` and the residual row `ρ` in the context outside the region. A type kinded there is locally closed and mentions only region names in scope (`check_lc`, `check_fresh` in `Stella.Core.Kinding.Facts`), so neither `β` nor `ρ` mentions the atom the body is opened with. This is the specification's escape condition `ℓ ∉ frn(β) ∪ frn(ρ)`.
 
 ## 2. Type equality, constraints, and kinding
 
