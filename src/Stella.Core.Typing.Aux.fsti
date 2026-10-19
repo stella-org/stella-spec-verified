@@ -48,11 +48,14 @@ let rec tys_ok (sg: sig) (g: ctx) (ts: list typ) : Tot bool (decreases ts) =
   | [] -> true
   | t :: ts -> check sg g t KType && tys_ok sg g ts
 
-(** Every cell type of a layout has kind `Type`. *)
+(** A layout is well formed: every key is structural and every cell type
+    has kind `Type`, which is what kinding it as a `Row Type` row says of
+    each entry (`Stella.Core.Typing.Wf.layout_row_ok`). Its keys being
+    distinct is no part of it. *)
 let rec layout_ok (sg: sig) (g: ctx) (l: layout) : Tot bool (decreases l) =
   match l with
   | [] -> true
-  | (_, t) :: l -> check sg g t KType && layout_ok sg g l
+  | (k, t) :: l -> struct_key k && check sg g t KType && layout_ok sg g l
 
 let rec regions_ok (sg: sig) (g: ctx) (rs: list (atom & layout)) : Tot bool (decreases rs) =
   match rs with
@@ -61,9 +64,12 @@ let rec regions_ok (sg: sig) (g: ctx) (rs: list (atom & layout)) : Tot bool (dec
 
 (** The structure of a local context is well formed (design §4.2): the type
     variables have well-formed quantifiable kinds, the facts and assumptions
-    are well-formed constraints, and every term variable and every cell of a
-    region has a type of kind `Type`. Whether the assumptions are consistent
-    is not part of it (design §2.2). *)
+    are well-formed constraints, every term variable has a type of kind
+    `Type`, and every layout of a region is well formed (`layout_ok`), so
+    its keys are structural. Whether the assumptions are consistent is not
+    part of it (design §2.2), and neither is the distinctness of the region
+    names or of the keys of a layout: that is the run-time invariant on
+    `Γ_R` (`Stella.Core.Typing.Runtime.rctx_ok`). *)
 let wf_ctx (sg: sig) (g: ctx) : bool =
   tvars_wf g && wf_hyps sg g && tys_ok sg g g.vars && regions_ok sg g g.regions
 
@@ -90,9 +96,9 @@ let is_ctor (sg: sig) (q: qname) : bool =
 (** The static value restriction on the body of a `Λ` and a constraint `Λ`:
 
       v ::= c | λ (x : τ) / ρ . e | Λ (a : κ). v | Λ (_ : C). v
-          | M.Ctor ς | {} | extend k v1 v2 | inject k [ρ] v
+          | M.Ctor [[κ̄]] ᾱ | {} | extend k v1 v2 | inject k [ρ] v
 
-    where `M.Ctor ς` is an application chain headed by a data constructor
+    where `M.Ctor [[κ̄]] ᾱ` is an application chain headed by a data constructor
     whose value arguments are value forms (`ctor_chain_form`). A variable is
     no value form. *)
 let rec value_form (sg: sig) (e: exp) : Tot bool (decreases %[e; 1]) =
@@ -112,7 +118,8 @@ and ctor_chain_form (sg: sig) (e: exp) : Tot bool (decreases %[e; 0]) =
 
 (** * Occurrences of run-time values (spec 06 §Pattern matching) *)
 
-(** The value arguments of a spine, in written order. *)
+(** `values(ᾱ)`: the value arguments among the arguments `ᾱ` of a chain, in
+    written order. *)
 let rec value_args (args: list spine_arg) : Tot (list exp) (decreases args) =
   match args with
   | [] -> []

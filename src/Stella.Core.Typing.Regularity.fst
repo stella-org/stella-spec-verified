@@ -336,7 +336,8 @@ and exps_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool)
 
 and cells_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#cells: list (key & exp))
   (#lay: layout) (h: cells_typing sg ln g cells lay)
-  : Lemma (requires sig_ok sg /\ wf_ctx sg g) (ensures layout_ok sg g lay) (decreases h) =
+  : Lemma (requires sig_ok sg /\ wf_ctx sg g) (ensures tys_ok sg g (L.map snd lay))
+          (decreases h) =
   match h with
   | TC_Nil -> ()
   | TC_Cons _ h1 h2 -> typing_regular' h1; cells_typing_regular' h2

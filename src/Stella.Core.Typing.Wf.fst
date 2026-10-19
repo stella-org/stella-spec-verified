@@ -3,7 +3,8 @@
    Context extensions: each component of `wf_ctx` is carried over
    separately. A term binder, an assumption and a region extend the context
    (`ctx_ext_*`), so the stored types keep their kinds by weakening; a type
-   binder shifts them (`check_shift`).
+   binder shifts them (`check_shift`). Neither touches the keys of a
+   layout, so they stay structural.
 
    `perform`: the operation's types are kinded in the declaration context
    `·, ā : κ̄, b̄ : κ̄'` with no kind variable. Kind instantiation at the
@@ -29,6 +30,7 @@ open Stella.Core.Context
 open Stella.Core.Kinding
 open Stella.Core.Kinding.Subst
 open Stella.Core.Kinding.Facts
+open Stella.Core.Kinding.Keys
 open Stella.Core.Spine
 open Stella.Core.Prim
 open Stella.Core.Typing.Aux
@@ -49,6 +51,11 @@ let rec layout_ok_assoc sg g l k t =
 let rec regions_ok_assoc sg g rs a l =
   match rs with
   | (a', _) :: rs' -> if a = a' then () else regions_ok_assoc sg g rs' a l
+
+let rec layout_ok_keys_struct sg g l =
+  match l with
+  | [] -> ()
+  | _ :: l' -> layout_ok_keys_struct sg g l'
 
 let rec layout_row_ok sg g l =
   match l with

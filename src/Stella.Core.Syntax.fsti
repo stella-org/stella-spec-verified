@@ -355,19 +355,19 @@ let fail_dt (partial unit_ctor: qname) (t: typ) : dtree =
     A data constructor or a foreign applied to arguments has no syntax of its
     own: it is the chain of `EApp`, `ETyApp` and `ECApp` over `EGlobal q ks`.
     The kind vector `[[κ̄]]` stays on `EGlobal`; the type, constraint and value
-    arguments are read off the chain, and the spec's argument spine `ς` of
-    `M.g ς` is this view of it.
+    arguments are read off the chain, which is the spec's spine view of
+    `M.g [[κ̄]] α1 … αn` (spec 05 §Chains of a constructor or a foreign).
 
     One syntax serves both the static and the run-time value forms. The value
     restriction admits a constructor chain whose arguments are values as the
     body of a `Λ` (spec 04 §Value forms), e.g. `Λ a. M.Cons [a] v1 v2`, and no
     evaluation context goes under `Λ`, so that chain is itself a run-time
-    value. The spine-formation steps of spec 06 §Forming and reducing a spine
-    only move arguments from applications into a spine; they have no
-    counterpart, and reduction is the spec's up to them (design §3, §6). *)
+    value. Reduction reads the chain itself, as the typing rules do, and has
+    no other run-time form of the call (spec 06 §Chains of a constructor or a
+    foreign; design §3, §6.2). *)
 
-(** An argument of a chain, the entries `α` of a spine after formation
-    (spec 06 §Forming and reducing a spine). *)
+(** An argument of a chain, an entry `α` of its spine view (spec 06 §Chains
+    of a constructor or a foreign). *)
 type spine_arg =
   | STy     : typ -> spine_arg             (** [τ] *)
   | SConstr : spine_arg                    (** [•] *)
@@ -415,13 +415,14 @@ let rec decompose_global_app (e: exp)
 val apply_args_snoc (e: exp) (args: list spine_arg) (a: spine_arg)
   : Lemma (apply_args e (L.append args [a]) == apply_arg (apply_args e args) a)
 
-(** Applying one argument to a chain extends its spine by that argument. *)
+(** Applying one argument to a chain extends its spine view by that
+    argument. *)
 val decompose_apply_arg (e: exp) (a: spine_arg)
   : Lemma (requires Some? (decompose_global_app e))
           (ensures (let Some (q, ks, args0) = decompose_global_app e in
                     decompose_global_app (apply_arg e a) == Some (q, ks, L.append args0 [a])))
 
-(** Applying arguments to a chain extends its spine. *)
+(** Applying arguments to a chain extends its spine view. *)
 val decompose_apply_args (e: exp) (args: list spine_arg)
   : Lemma (requires Some? (decompose_global_app e))
           (ensures (let Some (q, ks, args0) = decompose_global_app e in

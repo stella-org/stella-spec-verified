@@ -1,6 +1,6 @@
 (**
  * Well-formedness of the global signature `Σ` (spec 01 §Kinds, §Kind
- * schemes; spec 05 §Contexts; spec 06 §Typing a spine).
+ * schemes; spec 05 §Contexts, §Typing a chain).
  *
  * `sig_wf` holds the kinding conditions on the entries:
  *

@@ -2,9 +2,9 @@
  * Facts about the initialization-safety judgement of `Stella.Core.Init`.
  *
  *   - The arity of a global, read from its declared type, agrees with the
- *     spine cursor (spec 06 §The spine cursor): a spine the cursor walks is
- *     within the arity, a saturated one has exactly the arity's number of
- *     value arguments, and one more value argument after saturation makes a
+ *     cursor (spec 05 §The cursor): a chain the cursor walks is within the
+ *     arity, a saturated one has exactly the arity's number of value
+ *     arguments, and one more value argument after saturation makes a
  *     default application (`over_applied_default`).
  *   - Inversion of `reads_imm` and `reads_lat` on the forms whose sets are
  *     read off the form itself.
@@ -17,7 +17,7 @@ open Stella.Core.Spine
 open Stella.Core.Init
 module L = FStar.List.Tot
 
-(** * Arity and the spine cursor *)
+(** * Arity and the cursor *)
 
 val value_count_append (a1 a2: list spine_arg)
   : Lemma (value_count (L.append a1 a2) == value_count a1 + value_count a2)
@@ -38,7 +38,7 @@ val cursor_arity (sg: sig) (t: typ) (th: tsub) (args: list spine_arg)
 val saturated_arity (sg: sig) (t: typ)
   : Lemma (requires saturated sg t) (ensures decl_arity sg t == 0)
 
-(** A spine the cursor walks has at most the arity's number of value
+(** A chain the cursor walks has at most the arity's number of value
     arguments. *)
 val spine_cursor_arity (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg)
   : Lemma (requires Some? (spine_cursor sg q ks args))
@@ -46,19 +46,19 @@ val spine_cursor_arity (sg: sig) (q: qname) (ks: list kind) (args: list spine_ar
                    | Some (t', _) -> global_arity sg q == Some (value_count args + decl_arity sg t')
                    | None -> True))
 
-(** A saturated spine has exactly the arity's number of value arguments. *)
+(** A saturated chain has exactly the arity's number of value arguments. *)
 val spine_saturated_arity (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg)
   : Lemma (requires spine_saturated sg q ks args)
           (ensures global_arity sg q == Some (value_count args))
 
 (** An application the cursor consumes, its head no member, is within the
-    spine. *)
+    chain. *)
 val spine_app_cursor (sg: sig) (g: group) (q: qname) (ks: list kind)
                      (args: list spine_arg) (v: exp)
   : Lemma (requires None? (g.gmem q) /\ Some? (spine_cursor sg q ks (L.append args [SVal v])))
           (ensures spine_app sg g (EApp (recompose q ks args) v))
 
-(** A saturated spine applied to one more value argument is a default
+(** A saturated chain applied to one more value argument is a default
     application of its result. *)
 val over_applied_default (sg: sig) (g: group) (q: qname) (ks: list kind)
                          (args: list spine_arg) (v: exp)
@@ -100,7 +100,7 @@ val imm_global (#sg: sig) (#g: group) (#ve: venv) (#je: jenv) (#e: exp) (#m: nat
                (q: qname) (ks: list kind) (d: reads_imm sg g ve je e m)
   : Lemma (requires e == EGlobal q ks) (ensures g.gmem q == Some m)
 
-(** The `imm` of an application within a spine is that of its parts: given
+(** The `imm` of an application within a chain is that of its parts: given
     that neither part reads `m` now, neither does the application. *)
 val imm_spine_app (#sg: sig) (#g: group) (#ve: venv) (#je: jenv) (#e: exp) (#m: nat)
                   (f v: exp)

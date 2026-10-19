@@ -72,9 +72,11 @@ val binds_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#bs: list (typ & exp)
   (h: binds_typing sg ln g bs)
   : Lemma (tys_ok sg g (L.map fst bs))
 
+(** The cells kind the types of their layout. They say nothing of its keys,
+    which `wf_ctx` makes structural for a layout of `Γ`. *)
 val cells_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#cells: list (key & exp)) (#lay: layout)
   (h: cells_typing sg ln g cells lay)
-  : Lemma (requires sig_ok sg /\ wf_ctx sg g) (ensures layout_ok sg g lay)
+  : Lemma (requires sig_ok sg /\ wf_ctx sg g) (ensures tys_ok sg g (L.map snd lay))
 
 val match_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#th: list exp)
   (#om: octx)

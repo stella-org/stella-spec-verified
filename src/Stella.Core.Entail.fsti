@@ -10,7 +10,8 @@
  *
  * A constraint is decomposed over the canonical forms of its rows into
  * *atomic facts*: `k ∉ t` and `t1 # t2`, where `t`, `t1`, `t2` are tails of
- * canonical forms (spec 02 §`Γ*`). In a well-kinded row every tail is a
+ * canonical forms (spec 02 §`Γ*`: decomposing assumptions into atomic
+ * facts). In a well-kinded row every tail is a
  * `CVar`, so the atomic facts are those of the specification. Atoms over
  * arbitrary canonical tails, rather than over variable indices, keep
  * decomposition meaningful after any substitution, ill-kinded ones
@@ -42,8 +43,9 @@ module L = FStar.List.Tot
 
 (** * Atomic facts *)
 
-(** An atomic fact (spec 02 §`Γ*`). The name `atom` is taken by region
-    atoms (`Stella.Core.Syntax.atom`). *)
+(** An atomic fact (spec 02 §`Γ*`: decomposing assumptions into atomic
+    facts). The name `atom` is taken by region atoms
+    (`Stella.Core.Syntax.atom`). *)
 type afact =
   | ALacks : key -> ctyp -> afact     (** k ∉ t *)
   | ADisj  : ctyp -> ctyp -> afact    (** t1 # t2 *)

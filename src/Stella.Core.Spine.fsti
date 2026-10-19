@@ -1,6 +1,5 @@
 (**
- * The spine cursor and saturation (spec 06 §The spine cursor, §Saturation is
- * a position in the declared type).
+ * The cursor and saturation (spec 05 §The cursor).
  *
  * A global application chain `M.g [[κ̄]] α1 … αn` (design §3,
  * `Stella.Core.Syntax.decompose_global_app`) is classified at run time from
@@ -10,7 +9,7 @@
  * accumulated type substitution `θ`. The chain's type is the instance
  * `θ(σ)`, i.e. `sub_ty θ σ`. The cursor checks no well-formedness:
  * kinding, entailment and the types of value arguments are the typing
- * rules' business (spec 06 §Typing a spine).
+ * rules' business (spec 05 §Typing a chain).
  *
  * Saturation is a property of `σ`, not of `θ(σ)`: substitution can produce
  * an arrow that the declaration never called for, and that arrow is no
@@ -46,7 +45,7 @@ val as_function_fun_ty (sg: sig) (q: qname) (t1 r t2: typ)
 (** * The declared scheme of a global *)
 
 (** The two classes of global that head a chain with no body to unfold
-    to (spec 06 §Forming and reducing a spine). *)
+    to (spec 06 §Chains of a constructor or a foreign). *)
 type global_class =
   | GCtor        (** a data constructor *)
   | GForeign     (** a foreign *)
@@ -62,7 +61,7 @@ let global_scheme (sg: sig) (q: qname) : option (global_class & nat & typ) =
   | None, Some fi, None -> Some (GForeign, fi.fr_nk, fi.fr_ty)
   | _ -> None
 
-(** * The cursor (spec 06 §The spine cursor) *)
+(** * The cursor (spec 05 §The cursor) *)
 
 (** One argument consumed from the declared remainder `t` under `θ`:
 
@@ -97,7 +96,7 @@ let rec cursor (sg: sig) (t: typ) (th: tsub) (args: list spine_arg)
     | Some (t', th') -> cursor sg t' th' args
     | None -> None
 
-(** `cursorΣ(M.g, ς)` for the chain `M.g [[κ̄]] ς`. The kind vector of
+(** `cursorΣ(M.g [[κ̄]] ᾱ)` for the chain `M.g [[κ̄]] ᾱ`. The kind vector of
     `EGlobal` instantiates the whole kind scheme up front (kind schemes are
     prenex, D3), so the cursor is defined only when `|κ̄| = |k̄|`, and starts
     from `σ[k̄ := κ̄]` and the identity substitution. A declared type has no
@@ -110,8 +109,7 @@ let spine_cursor (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg)
   | None -> None
 
 (** The cursor after one more argument is one step from the cursor
-    before it, which is how the spec states it (spec 06 §The spine
-    cursor). *)
+    before it, which is how the spec states it (spec 05 §The cursor). *)
 val cursor_snoc (sg: sig) (t: typ) (th: tsub) (args: list spine_arg) (a: spine_arg)
   : Lemma (cursor sg t th (L.append args [a]) ==
            (match cursor sg t th args with
@@ -197,7 +195,7 @@ val chain_cursor_sub_tm (sg: sig) (sigma: esub) (e: exp)
   : Lemma (requires Some? (decompose_global_app e))
           (ensures chain_cursor sg (sub_tm sigma e) == chain_cursor sg e)
 
-(** * Saturation (spec 06 §Saturation is a position in the declared type) *)
+(** * Saturation (spec 05 §The cursor) *)
 
 (** A declared remainder is saturated when it is not a `forall`, not a
     constraint arrow, and not a function type. *)
@@ -211,15 +209,15 @@ let saturated (sg: sig) (t: typ) : bool =
 val saturated_kinst (sg: sig) (ks: list kind) (t: typ)
   : Lemma (saturated sg (kinst_ty ks t) == saturated sg t)
 
-(** The cursor of `M.g [[κ̄]] ς` is defined and its remainder is
+(** The cursor of `M.g [[κ̄]] ᾱ` is defined and its remainder is
     saturated. *)
 let spine_saturated (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg) : bool =
   match spine_cursor sg q ks args with
   | Some (t, _) -> saturated sg t
   | None -> false
 
-(** The cursor of `M.g [[κ̄]] ς` is defined and its remainder is not
-    saturated. Where the cursor is undefined, `ς` is neither. *)
+(** The cursor of `M.g [[κ̄]] ᾱ` is defined and its remainder is not
+    saturated. Where the cursor is undefined, the chain is neither. *)
 let spine_unsaturated (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg) : bool =
   match spine_cursor sg q ks args with
   | Some (t, _) -> not (saturated sg t)

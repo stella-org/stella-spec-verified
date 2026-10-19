@@ -60,7 +60,7 @@ let safe_by (sg: sig) (g: group)
   with introduce rhs g i == Some r ==> m < i
        with k i r m d
 
-(* `Tuple a b` is an application within the spine of `Tuple` at both of
+(* `Tuple a b` is an application within the chain of `Tuple` at both of
    its value arguments, its head being no member. *)
 let tuple_spine (g: group) (t: typ) (a b: exp)
   : Lemma (requires None? (g.gmem (ex "Tuple")))

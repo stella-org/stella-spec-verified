@@ -1,6 +1,6 @@
 (**
- * The spine cursor under a well-formed signature (spec 06 §The spine
- * cursor, §Typing a spine).
+ * The cursor under a well-formed signature (spec 05 §The cursor, §Typing a
+ * chain).
  *
  *   - Under `prim_wf`, the function types the cursor reads are those of
  *     `Prim.Function`, and such a type is kinded exactly when its parts
@@ -10,7 +10,7 @@
  *     equality, before and after the accumulated substitution.
  *   - Regularity of the cursor: when the type and constraint arguments of a
  *     chain are well formed against the cursor (`spine_args_ok`, the table
- *     of spec 06 §Typing a spine without its row for value arguments), the
+ *     of spec 05 §Typing a chain without its row for value arguments), the
  *     instance `θ(σ)` of every remainder `σ` the cursor reaches is kinded.
  *     The step lemmas carry this one argument at a time, as a typing rule
  *     that builds a chain one node at a time reads it.
@@ -49,7 +49,7 @@ val cursor_arrow_pure (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg
                     as_function sg t == Some (t1, r, t2))
           (ensures ty_eq r TRowEmpty /\ ty_eq (sub_ty th r) TRowEmpty)
 
-(** * Well-formed arguments (spec 06 §Typing a spine) *)
+(** * Well-formed arguments (spec 05 §Typing a chain) *)
 
 (** The argument `a` is well formed in `g` against the remainder `σ`
     under `θ`: a `[τ]` consumes `forall (a : κ)` and has kind `κ`, a `[•]`
@@ -74,9 +74,9 @@ let rec cursor_args_ok (sg: sig) (g: ctx) (t: typ) (th: tsub) (args: list spine_
      | Some (t', th') -> cursor_args_ok sg g t' th' args
      | None -> false)
 
-(** The kinds and the arguments of `M.g [[κ̄]] ς` are well formed in `g`:
+(** The kinds and the arguments of `M.g [[κ̄]] ᾱ` are well formed in `g`:
     `κ̄` are well-formed quantifiable kinds, as many as the kind variables
-    of `M.g`, and every argument of `ς` is well formed against the cursor. *)
+    of `M.g`, and every argument of `ᾱ` is well formed against the cursor. *)
 let spine_args_ok (sg: sig) (g: ctx) (q: qname) (ks: list kind) (args: list spine_arg) : bool =
   match global_scheme sg q with
   | Some (_, nk, t) ->
@@ -144,8 +144,9 @@ val spine_cursor_fun_regular (sg: sig) (g: ctx) (q: qname) (ks: list kind)
 
 (** A type substitution keeps the remainder the cursor of a chain reaches,
     and maps its instance and, at an arrow, the instances of the arrow's
-    parts: the declared type is closed, so the accumulated substitution is
-    consulted only at the variables of consumed binders, which the chain's
+    parts, and at a constraint arrow the instance of its constraint: the
+    declared type is closed, so the accumulated substitution is consulted
+    only at the variables of consumed binders, which the chain's
     substituted type arguments instantiate. A renaming is the substitution
     `ren_tsub ξ` (`Stella.Core.Subst.Lemmas.TyExp.ren_ty_exp_as_sub`). *)
 val chain_cursor_sub_ty (sg: sig) (sigma: tsub) (e: exp) (t: typ) (th: tsub)
@@ -156,5 +157,7 @@ val chain_cursor_sub_ty (sg: sig) (sigma: tsub) (e: exp) (t: typ) (th: tsub)
                       (forall (t1 r t2: typ). as_function sg t == Some (t1, r, t2) ==>
                          sub_ty th' t1 == sub_ty sigma (sub_ty th t1) /\
                          sub_ty th' r == sub_ty sigma (sub_ty th r) /\
-                         sub_ty th' t2 == sub_ty sigma (sub_ty th t2))
+                         sub_ty th' t2 == sub_ty sigma (sub_ty th t2)) /\
+                      (forall (c: constr) (b: typ). t == TConstr c b ==>
+                         sub_constr th' c == sub_constr sigma (sub_constr th c))
                     | None -> False))

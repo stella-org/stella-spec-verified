@@ -725,8 +725,8 @@ let jp_scoped_subst1_value (sg: sig) (n k: nat) (v e: exp)
   introduce forall (i: nat). jp_scoped 0 (scons v evar i) with ();
   jp_scoped_sub_tm n (scons v evar) e
 
-(* The example of spec 06 §Saturation is a position in the declared type,
-   `foreign id : forall a. a -> a` used at `Int -> Int`, in a signature
+(* The example of spec 05 §The cursor, `foreign id : forall a. a -> a`
+   used at `Int -> Int`, in a signature
    holding only `Prim.Function`, `Prim.Int` and `M.id`. *)
 let ex_function : qname = { qmod = ["Prim"]; qid = "Function" }
 let ex_int_q : qname = { qmod = ["Prim"]; qid = "Int" }

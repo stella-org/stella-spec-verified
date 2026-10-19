@@ -189,11 +189,11 @@ val jp_scoped_sub_tm_dt (n: nat) (sigma: esub) (dt: dtree)
     `is_value sg e` is the value grammar of spec 06 §Values:
 
       v ::= c | λ (x : τ) / ρ . e | Λ (a : κ). v | Λ (_ : C). v
-          | M.Ctor ς | M.f ς  (ς not saturated)
+          | M.Ctor [[κ̄]] ᾱ | M.f [[κ̄]] ᾱ  (not saturated)
           | {} | extend k v1 v2 | inject k [ρ] v | weaken k [τ] v
           | openEff [ρ] v | opaque ω [τ]
 
-    where `M.g ς` is a global application chain (design §3,
+    where `M.g [[κ̄]] ᾱ` is a global application chain (design §3,
     `decompose_global_app`) whose value arguments are all values
     (`chain_values`). Whether its head makes it a value depends on `Σ`
     (`value_head`):
@@ -202,9 +202,9 @@ val jp_scoped_sub_tm_dt (n: nat) (sigma: esub) (dt: dtree)
         A constructor's arrows are pure and its result is a data type, never
         an arrow, so an over-applied constructor chain is ill-typed and
         needs no case of its own;
-      - a chain headed by a foreign is a value while its spine is not
-        saturated (`spine_unsaturated`, which requires the cursor to be
-        defined). A saturated one is a redex (`foreign_redex`).
+      - a chain headed by a foreign is a value while it is not saturated
+        (`spine_unsaturated`, which requires the cursor to be defined). A
+        saturated one is a redex (`foreign_redex`).
 
     The atomic reference `M.g [[κ̄]]` is the chain with no argument. A
     global with a body to unfold, a top-level value, heads no value. *)
@@ -235,7 +235,7 @@ and chain_values (sg: sig) (e: exp) : Tot bool (decreases %[e; 0]) =
   | ETyApp f _ | ECApp f -> chain_values sg f
   | _ -> false
 
-(** Each value argument of a spine is a value. *)
+(** Each value argument among the arguments of a chain is a value. *)
 let rec args_values (sg: sig) (args: list spine_arg) : Tot bool (decreases args) =
   match args with
   | [] -> true
@@ -249,9 +249,9 @@ val chain_values_view (sg: sig) (e: exp)
             | Some (_, _, args) -> args_values sg args
             | None -> false))
 
-(** `M.f ς` with `ς` saturated for the foreign `M.f` and every value argument
-    a value: the redex of `M.f ς → δ_f(values(ς))` (spec 06 §Forming and
-    reducing a spine). *)
+(** `M.f [[κ̄]] ᾱ`, a saturated chain of the foreign `M.f` whose every value
+    argument is a value: the redex of `M.f [[κ̄]] ᾱ → δ_f(values(ᾱ))` (spec 06
+    §Chains of a constructor or a foreign). *)
 let foreign_redex (sg: sig) (e: exp) : bool =
   match decompose_global_app e with
   | Some (q, ks, args) ->

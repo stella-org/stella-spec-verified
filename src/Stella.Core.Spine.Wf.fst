@@ -297,4 +297,16 @@ let chain_cursor_sub_ty sg sigma e t th =
     inst_sub m sigma th th' t1;
     inst_sub m sigma th th' r;
     inst_sub m sigma th th' t2
+  end;
+  introduce forall (c: constr) (b: typ). t == TConstr c b ==>
+    sub_constr th' c == sub_constr sigma (sub_constr th c)
+  with introduce _ ==> _
+  with begin
+    (* `TConstr c ()` carries `c` alone. *)
+    let u = TConstr c TRowEmpty in
+    assert (tvs_below_constr m c);
+    assert (tvs_below m u);
+    inst_sub m sigma th th' u;
+    assert (sub_ty th' u == TConstr (sub_constr th' c) TRowEmpty);
+    assert (sub_ty sigma (sub_ty th u) == TConstr (sub_constr sigma (sub_constr th c)) TRowEmpty)
   end

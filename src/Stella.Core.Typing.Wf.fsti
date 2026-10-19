@@ -22,6 +22,7 @@ open Stella.Core.Context
 open Stella.Core.Kinding
 open Stella.Core.Kinding.Subst
 open Stella.Core.Kinding.Facts
+open Stella.Core.Kinding.Keys
 open Stella.Core.Prim
 open Stella.Core.Typing.Aux
 open Stella.Core.Typing
@@ -38,7 +39,11 @@ val layout_ok_assoc (sg: sig) (g: ctx) (l: layout) (k: key) (t: typ)
 val regions_ok_assoc (sg: sig) (g: ctx) (rs: list (atom & layout)) (a: atom) (l: layout)
   : Lemma (requires regions_ok sg g rs /\ L.assoc a rs == Some l) (ensures layout_ok sg g l)
 
-(** A layout kinded as a row has cells of kind `Type`. *)
+(** A well-formed layout has structural keys. *)
+val layout_ok_keys_struct (sg: sig) (g: ctx) (l: layout)
+  : Lemma (requires layout_ok sg g l) (ensures keys_struct (L.map fst l))
+
+(** A layout kinded as a `Row Type` row is well formed. *)
 val layout_row_ok (sg: sig) (g: ctx) (l: layout)
   : Lemma (requires check sg g (layout_row l) (KRow EType)) (ensures layout_ok sg g l)
 
@@ -74,9 +79,10 @@ val wf_ctx_clause_binders (sg: sig) (g: ctx) (q: qname) (ei: effect_info) (op: o
 val wf_ctx_add_assump (sg: sig) (g: ctx) (c: constr)
   : Lemma (requires wf_ctx sg g /\ constr_ok sg g c) (ensures wf_ctx sg (add_assump g c))
 
-(** Entering a region whose cells have kind `Type` in `g`. The facts it
-    adds are well formed whatever the atom (`wf_hyps_enter_region`), so
-    freshness is no condition. *)
+(** Entering a region whose layout is well formed in `g`, as a layout
+    kinded as a `Row Type` row is (`layout_row_ok`). The facts it adds are
+    well formed whatever the atom (`wf_hyps_enter_region`), so freshness is
+    no condition, and the layout's keys need not be distinct. *)
 val wf_ctx_enter_region (sg: sig) (g: ctx) (a: atom) (l: layout)
   : Lemma (requires wf_ctx sg g /\ layout_ok sg g l) (ensures wf_ctx sg (enter_region g a l))
 

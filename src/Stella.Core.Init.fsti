@@ -95,11 +95,11 @@ module L = FStar.List.Tot
 
 (** The number of value arguments a declared type accepts: the function
     arrows on its spine, reached through `forall` and constraint arrows in
-    the order the spine cursor consumes them (spec 06 §Saturation is a
-    position in the declared type). It is read from the declared type, so an
-    arrow that only an instantiation produces is not counted. A spine the
-    cursor walks consumes one of these arrows per value argument, and a
-    saturated one has consumed all of them (`Stella.Core.Init.Lemmas`). *)
+    the order the cursor consumes them (spec 05 §The cursor). It is read
+    from the declared type, so an arrow that only an instantiation produces
+    is not counted. A chain the cursor walks consumes one of these arrows
+    per value argument, and a saturated one has consumed all of them
+    (`Stella.Core.Init.Lemmas`). *)
 let rec decl_arity (sg: sig) (t: typ) : Tot nat (decreases t) =
   match t with
   | TForall _ b -> decl_arity sg b
@@ -115,7 +115,7 @@ let global_arity (sg: sig) (q: qname) : option nat =
   | Some (_, _, t) -> Some (decl_arity sg t)
   | None -> None
 
-(** The number of value arguments of a spine. *)
+(** The number of value arguments of a chain. *)
 let rec value_count (args: list spine_arg) : Tot nat (decreases args) =
   match args with
   | [] -> 0
@@ -350,7 +350,7 @@ let top_group (ms: list (qname & exp)) : group = {
 
 (** * Classifying a form *)
 
-(** `e` is an application `f v` within the spine of a data constructor or a
+(** `e` is an application `f v` within the chain of a data constructor or a
     foreign, through type and constraint applications, with no more value
     arguments than its arity (spec 10 §What an initializer reads, the row
     `M.c ē`). An application beyond the arity is a default application of
@@ -392,7 +392,7 @@ let takes (e: exp) : option exp =
   | ESelect _ b | ERestrict _ b | EWeaken _ _ b | EAbsurd _ b -> Some b
   | _ -> None
 
-(** The subexpressions of an application within a spine (`spine_app`). *)
+(** The subexpressions of an application within a chain (`spine_app`). *)
 let spine_parts (sg: sig) (g: group) (e: exp) : list exp =
   match e with
   | EApp f v -> if spine_app sg g e then [f; v] else []
@@ -456,10 +456,11 @@ let switch_subtrees (dt: dtree) : list dtree =
     A handling expression and a region (`is_whole`) have
     `imm = ⋃_s (imm(s) ∪ lat(s))` and `lat = ⋃_s lat(s)`, over every
     subexpression `s` at any depth of their parts, each binder of a clause
-    at `ρ = ∅` (spec 10 §A handling expression and a region count everything
-    they hold as read through them). The `imm` of each part, which spec 10
-    writes beside them, is among them, a part being a subexpression of
-    itself at depth 0; the two differ only in their witnesses. *)
+    at `ρ = ∅` (spec 10 §What an initializer reads, where a handling
+    expression and a region count everything they hold as read through
+    them). The `imm` of each part, which spec 10 writes beside them, is
+    among them, a part being a subexpression of itself at depth 0; the two
+    differ only in their witnesses. *)
 noeq type reads_imm (sg: sig) (g: group) : venv -> jenv -> exp -> nat -> Type =
   (* `x`, a member: `{ x }` *)
   | IMember :

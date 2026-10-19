@@ -169,7 +169,8 @@ val key_split_exhaustive (r: typ) (kts: list (key & typ))
           (ensures row_tails (canon r) == [] /\
                    (forall (e: centry). L.mem e (row_entries (canon r)) <==> L.mem e (brs_entries kts)))
 
-(** A kinded branch row has payloads of kind `Type` and a kinded tail. *)
+(** A kinded branch row has structural keys, payloads of kind `Type` and a
+    kinded tail. *)
 val check_brs_row (sg: sig) (g: ctx) (kts: list (key & typ)) (r: typ)
   : Lemma (requires check sg g (brs_row kts r) (KRow EType))
           (ensures layout_ok sg g kts /\ check sg g r (KRow EType))

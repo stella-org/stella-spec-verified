@@ -24,9 +24,10 @@
  *     standing where a row is expected, is an opaque tail.
  *
  * In a well-kinded type every tail is a type variable, and the entry set
- * is the graph of a finite map; there the canonical form is spec 02 §Normal
- * form's `nf`. Entries with one key and different payloads remain distinct:
- * excluding them is the job of kinding (spec 02 §Sharpness).
+ * is the graph of a finite map; there the canonical form is the `nf` of
+ * spec 02 §Sharp normal form. Entries with one key and different payloads
+ * remain distinct: excluding them is the job of kinding (spec 02
+ * §Sharpness).
  *
  * ## Operations on canonical forms
  *

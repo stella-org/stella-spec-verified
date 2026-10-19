@@ -1,6 +1,6 @@
 (**
- * The typing relation of the Core (spec 05; spec 06 §Typing a spine,
- * §Run-time forms, §Opaque values).
+ * The typing relation of the Core (spec 05; spec 06 §Run-time forms,
+ * §Opaque values).
  *
  *     typing sg ln g d tl e t r            Γ; Δ ⊢ e : τ ! ρ
  *     chain_typing sg ln g d r e           the arguments of the chain e, at ρ
@@ -68,11 +68,10 @@
  * ## Application chains
  *
  * A chain `M.g [[κ̄]] α1 … αn` headed by a constructor or a foreign
- * (`Stella.Core.Spine.global_scheme`) is typed as spec 06 §Typing a spine
- * types the spine `M.g ([[κ̄]], α1, …, αn)`: `T_Chain` gives it the type
- * `θ(σ)` for its cursor `⟨ σ ; θ ⟩` (`Stella.Core.Spine.chain_cursor`),
- * once `chain_typing` has checked every argument against the cursor before
- * it. `chain_typing` follows the chain node by node, as the term is built:
+ * (`Stella.Core.Spine.global_scheme`) is typed as spec 05 §Typing a chain
+ * types it: `T_Chain` gives it the type `θ(σ)` for its cursor `⟨ σ ; θ ⟩`
+ * (`Stella.Core.Spine.chain_cursor`), once `chain_typing` has checked every
+ * argument against the cursor before it. `chain_typing` follows the chain node by node, as the term is built:
  *
  *   - the head `M.g [[κ̄]]` has as many well-formed quantifiable kinds as
  *     the kind scheme of `M.g` has variables;
@@ -87,8 +86,7 @@
  * the chain is a computation at any ambient row, as its value arguments
  * are. The cursor reads the declared type, so an arrow that `θ` produces
  * is no argument position: applying the result of a saturated foreign is an
- * ordinary application (spec 06 §Saturation is a position in the declared
- * type).
+ * ordinary application (spec 05 §The cursor).
  *
  * `T_Global`, `T_TyApp`, `T_CApp` and `T_App` apply to the nodes of such a
  * chain as well, `T_App` with the value argument at the arrow's own row.
@@ -111,7 +109,7 @@
  * `case (ē) of dt` types `dt` under `Ω = { s_i ↦ τ_i }`. The run-time form
  * `match θ dt` types `dt` under an `Ω` written in the derivation, every
  * entry `o ↦ τ` of which is justified by the value `θ(o)` (`proj`) having
- * type `τ` (design §6).
+ * type `τ` (design §6.1).
  *
  * A `switchKey` on `o : Variant ρ` reads `ρ` as a split
  * `ρ ≡ ( k1 : τ1 | … | kn : τn | ρ' )` (`key_split`): the branches write
@@ -223,7 +221,7 @@ noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> exp -> typ -> typ
       typing sg ln g d tl (EApp e1 e2) t2 r
 
   (** A chain headed by a constructor or a foreign, at its cursor
-      `⟨ σ ; θ ⟩`: `M.g ς : θ(σ) ! ρ` (spec 06 §Typing a spine). *)
+      `⟨ σ ; θ ⟩`: `M.g [[κ̄]] ᾱ : θ(σ) ! ρ` (spec 05 §Typing a chain). *)
   | T_Chain :
       #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #t:typ -> #th:tsub -> #r:typ ->
       chain_typing sg ln g d r e ->
@@ -537,8 +535,8 @@ and exps_typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> typ -> list exp ->
       exps_typing sg ln g d tl r (e :: es) (t :: ts)
 
 (** The arguments of a chain `M.g [[κ̄]] α1 … αn` headed by a constructor
-    or a foreign, each well formed against the cursor before it (spec 06
-    §Typing a spine), the value arguments at the ambient row `ρ` of the
+    or a foreign, each well formed against the cursor before it (spec 05
+    §Typing a chain), the value arguments at the ambient row `ρ` of the
     chain. *)
 and chain_typing (sg: sig) (ln: lctx) : ctx -> jctx -> typ -> exp -> Type =
   (** `M.g [[κ̄]]` *)
@@ -549,21 +547,21 @@ and chain_typing (sg: sig) (ln: lctx) : ctx -> jctx -> typ -> exp -> Type =
       squash (L.length ks == nk /\ qkinds_wf g.nk ks) ->
       squash (check sg g r (KRow EEffect)) ->
       chain_typing sg ln g d r (EGlobal q ks)
-  (** `ς, [τ]` against `forall (a : κ). σ`: `Γ ⊢ τ : κ`. *)
+  (** `ᾱ [τ]` against `forall (a : κ). σ`: `Γ ⊢ τ : κ`. *)
   | TS_Ty :
       #g:ctx -> #d:jctx -> #r:typ -> #e:exp -> #s:typ -> #k:kind -> #t:typ -> #th:tsub ->
       chain_typing sg ln g d r e ->
       squash (chain_cursor sg e == Some (TForall k t, th)) ->
       squash (check sg g s k) ->
       chain_typing sg ln g d r (ETyApp e s)
-  (** `ς, [•]` against `C => σ`: `Γ ⊨ θ(C)`. *)
+  (** `ᾱ [•]` against `C => σ`: `Γ ⊨ θ(C)`. *)
   | TS_Constr :
       #g:ctx -> #d:jctx -> #r:typ -> #e:exp -> #c:constr -> #t:typ -> #th:tsub ->
       chain_typing sg ln g d r e ->
       squash (chain_cursor sg e == Some (TConstr c t, th)) ->
       squash (entails (hyps g) (sub_constr th c)) ->
       chain_typing sg ln g d r (ECApp e)
-  (** `ς, w` against `τ1 -{ρ'}-> τ2`: `Γ; Δ ⊢ w : θ(τ1) ! ρ`. *)
+  (** `ᾱ w` against `τ1 -{ρ'}-> τ2`: `Γ; Δ ⊢ w : θ(τ1) ! ρ`. *)
   | TS_Val :
       #g:ctx -> #d:jctx -> #r:typ -> #e:exp -> #v:exp -> #t:typ -> #th:tsub -> #t1:typ ->
       #r1:typ -> #t2:typ ->
