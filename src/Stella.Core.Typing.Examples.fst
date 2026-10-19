@@ -262,19 +262,27 @@ let ex_datas_ok () : Lemma (datas_ok ex_sig) =
   assert_norm (data_ok ex_sig prim_unit [prim_unit_ctor]);
   assert_norm (data_ok ex_sig (prelude "Maybe") [prelude "Nothing"; prelude "Just"])
 
-let ex_no_foreigns () : Lemma (foreigns_wf ex_sig /\ values_wf ex_sig /\ globals_disjoint ex_sig /\ foreigns_pure ex_sig) =
-  ()
+let ex_foreigns_wf () : Lemma (foreigns_wf ex_sig /\ values_wf ex_sig) =
+  assert_norm (scheme_ok ex_sig 0 konst_ty)
+
+let ex_globals_disjoint () : Lemma (globals_disjoint ex_sig) =
+  assert_norm (ex_foreigns prim_unit_ctor == None);
+  assert_norm (ex_foreigns (prelude "Nothing") == None);
+  assert_norm (ex_foreigns (prelude "Just") == None)
+
+let ex_foreigns_pure () : Lemma (foreigns_pure ex_sig) = assert_norm (arrows_pure konst_ty)
 
 let ex_sig_wf () : Lemma (sig_wf ex_sig) =
   ex_tycons_wf ();
   ex_effects_wf ();
   ex_ctors_wf ();
-  ex_no_foreigns ()
+  ex_foreigns_wf ();
+  ex_globals_disjoint ()
 
 let ex_globals_ok () : Lemma (globals_ok ex_sig) =
   ex_ctors_ok ();
   ex_datas_ok ();
-  ex_no_foreigns ()
+  ex_foreigns_pure ()
 
 let ex_sig_ok () =
   ex_sig_wf ();

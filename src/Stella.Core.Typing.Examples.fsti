@@ -14,8 +14,9 @@
  *
  *   - in `Prim`, every name of `Stella.Core.Prim`, as `prim_wf` requires
  *     (`ex_prim_wf`);
- *   - in `Prelude`, the data type `Maybe (a : Type) = Nothing | Just a` and
- *     the effect `Partial` with `abort : forall (b : Type). Unit ->* b`.
+ *   - in `Prelude`, the data type `Maybe (a : Type) = Nothing | Just a`,
+ *     the effect `Partial` with `abort : forall (b : Type). Unit ->* b`,
+ *     and the foreign `konst : forall (a : Type). a -> Int -> a`.
  *)
 module Stella.Core.Typing.Examples
 open Stella.Core.Syntax
@@ -80,11 +81,19 @@ let partial_info : effect_info = { eff_params = []; eff_ops = [("abort", abort_s
 let ex_effects (q: qname) : option effect_info =
   if q = prelude "Partial" then Some partial_info else None
 
+(** `konst : forall (a : Type). a -> Int -> a` *)
+let konst_ty : typ = TForall KType (t_fun (TVar 0) TRowEmpty (t_fun t_int TRowEmpty (TVar 0)))
+
+let konst_info : foreign_info = { fr_nk = 0; fr_ty = konst_ty; fr_observ_none = true }
+
+let ex_foreigns (q: qname) : option foreign_info =
+  if q = prelude "konst" then Some konst_info else None
+
 let ex_sig : sig = {
   tycons = ex_tycons;
   effects = ex_effects;
   ctors = ex_ctors;
-  foreigns = (fun _ -> None);
+  foreigns = ex_foreigns;
   values = (fun _ -> None);
 }
 

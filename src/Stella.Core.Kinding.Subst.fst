@@ -359,8 +359,10 @@ let wf_hyps_enter_region sg g a l =
     LP.append_mem (region_facts a 0 g.tvars) g.facts c;
     LP.append_mem g.facts g.assumps c;
     if L.mem c (region_facts a 0 g.tvars) then begin
-      let _ = region_facts_wit a 0 g.tvars c in
-      rdom_enter_region g a l
+      let j = region_facts_wit a 0 g.tvars c in
+      rdom_enter_region g a l;
+      assert (check sg g1 (TVar j) (KRow EEffect));
+      assert (key_ok sg g1 (RegionKey (RFree a)) EEffect)
     end
     else constr_ok_weaken sg g g1 c
   end

@@ -108,12 +108,6 @@ let enter_region (g: ctx) (a: atom) (l: layout) : ctx =
     facts = L.append (region_facts a 0 g.tvars) g.facts;
     regions = (a, l) :: g.regions }
 
-(** The facts of entering the region `a` alone, its name being in scope
-    already: the body of an open region frame `region⟨a⟩ θ in e`, whose name
-    is one of `Γ_R` (spec 06 §Run-time forms). *)
-let add_region_facts (g: ctx) (a: atom) : ctx =
-  { g with facts = L.append (region_facts a 0 g.tvars) g.facts }
-
 (** * Mapping the types stored in a context
 
     Each map applies one operation to every type the context stores: the

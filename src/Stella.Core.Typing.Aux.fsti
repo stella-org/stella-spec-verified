@@ -270,18 +270,6 @@ let rec brs_row (kts: list (key & typ)) (r: typ) : Tot typ (decreases kts) =
     reads a split kinds them itself. *)
 let key_split (r: typ) (kts: list (key & typ)) (r': typ) : bool = ty_eq r (brs_row kts r')
 
-(** `F ∖ k̄`: the entries whose key is not among `ks`. *)
-let rec drop_keys (ks: list key) (es: list centry) : Tot (list centry) (decreases es) =
-  match es with
-  | [] -> []
-  | e :: es -> if L.mem (fst e) ks then drop_keys ks es else e :: drop_keys ks es
-
-(** Every key of `F` is among `ks`. *)
-let rec keys_covered (es: list centry) (ks: list key) : Tot bool (decreases es) =
-  match es with
-  | [] -> true
-  | e :: es -> L.mem (fst e) ks && keys_covered es ks
-
 (** * Operations and clauses *)
 
 (** `τ[ā := τ̄]` for a type `τ` of an operation signature of `E (ā : κ̄)`,
