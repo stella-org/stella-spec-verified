@@ -161,6 +161,12 @@ and constr =
 let fun_ty (function_name: qname) (t1 rho t2: typ) : typ =
   TApp (TApp (TApp (TCon function_name []) t1) rho) t2
 
+(** `h τ1 … τn`, the arguments applied in order. *)
+let rec tapps (h: typ) (ts: list typ) : Tot typ (decreases ts) =
+  match ts with
+  | [] -> h
+  | t :: ts -> tapps (TApp h t) ts
+
 (** ** Literals (spec 04 §Term syntax; D37, D27) *)
 
 (** A Unicode scalar value: a code point that is not a surrogate (D27). *)
@@ -408,6 +414,12 @@ let rec decompose_global_app (e: exp)
 
 val apply_args_snoc (e: exp) (args: list spine_arg) (a: spine_arg)
   : Lemma (apply_args e (L.append args [a]) == apply_arg (apply_args e args) a)
+
+(** Applying one argument to a chain extends its spine by that argument. *)
+val decompose_apply_arg (e: exp) (a: spine_arg)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures (let Some (q, ks, args0) = decompose_global_app e in
+                    decompose_global_app (apply_arg e a) == Some (q, ks, L.append args0 [a])))
 
 (** Applying arguments to a chain extends its spine. *)
 val decompose_apply_args (e: exp) (args: list spine_arg)

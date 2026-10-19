@@ -219,7 +219,7 @@ The predicate `is_source` excludes these forms.
 - a constraint argument consumes a constraint arrow;
 - a value argument consumes a function arrow.
 
-A chain is *saturated* when the unconsumed part of the **declared** type is none of these three. An arrow that appears only after instantiation does not count. A constructor-headed chain whose value arguments are values is a value. A foreign-headed chain is a value while it is unsaturated, and a redex once it is saturated with value arguments. Function types are recognized through the class Σ records for the function type constructor (§4.1).
+`chain_cursor` runs the cursor over a whole chain, and a chain's type is the unconsumed declared remainder under the accumulated substitution. A chain is *saturated* when the unconsumed part of the **declared** type is none of these three. An arrow that appears only after instantiation does not count. A constructor-headed chain whose value arguments are values is a value. A foreign-headed chain is a value while it is unsaturated, and a redex once it is saturated with value arguments. Function types are recognized through the class Σ records for the function type constructor (§4.1).
 
 `fail` is derived notation (spec 03 §Partiality) and is a function rather than a constructor. Its expansion names the effect `Partial` and the constructor `Prim.Unit`, which are passed to it as parameters, and the result type `τ`.
 
@@ -262,7 +262,15 @@ The typing rules name the type constructors of `Prim` (`Stella.Core.Prim`), and 
 - `IO` has kind `Type -> Type` and class opaque;
 - `Unit` is a data type whose only constructor is `Prim.Unit`.
 
-No other type constructor has class function, record, or variant. The metatheory of the typing relation assumes `sig_ok`, which is `sig_wf` together with `prim_wf`.
+No other type constructor has class function, record, or variant.
+
+`globals_ok` fixes the shape of constructors and foreigns:
+
+- a constructor's type is `forall k̄. forall ā. τ̄ -{()}-> T k̄ ā`, where `k̄` and `ā` are the kind and type parameters of its owner `T`, and its arity is `|τ̄|`. The arrows of the spine are pure; the field types `τ̄` may contain any arrows;
+- the owner of a constructor and the constructor list of a data type agree in both directions, and the constructors of one type have distinct tags;
+- every arrow of a foreign's type outside a constraint is pure (D23).
+
+The metatheory of the typing relation assumes `sig_ok`, which is `sig_wf ∧ prim_wf ∧ globals_ok`. Without the constructor shape, a constructor `C : forall a. a -> T Int` would let a dispatch read a field at `Int` while the value holds any type.
 
 ### 4.2 The local context Γ
 
@@ -373,7 +381,7 @@ This formalization differs from the specification, or fills gaps in it, at the p
 | The specification writes a global applied to arguments in two ways: as an application chain, which the value restriction admits as the body of a `Λ` (spec 04 §Value forms, e.g. `Λ a. M.Cons [a] v1 v2`), and as a run-time spine `M.g ς` (spec 06 §Values), with formation steps turning the first into the second. No evaluation context goes under `Λ`, so such a body is a static value form but not a run-time value, and the term is stuck, which contradicts progress. | There is no spine syntax: the chain is the only form and the spine is a view of it (§3). Reduction is the specification's up to the formation steps, which are administrative and do not exist here. |
 | The initialization-safety judgement gives no rule for the run-time forms (spec 10 §What an initializer reads), but reduction puts `force ν` into the initializers of a nested group (spec 06 §Recursive bindings). | Run-time forms have rules (§5), so the judgement is defined on every term that reduction produces. |
 | `F(k)`, the payload a row's normal form holds at `k`, is read off the normal form in the rules for `perform`, `switchKey`, and the record-field occurrence (spec 05). Here a normal form holds canonical payloads, not types. | The derivation writes a type whose canonical form is the payload and which is kinded at `Type`. Kinding the row makes the entry unique, by sharpness. |
-| The field types of a constructor in `switchCtor` are `τ_ij[ā := σ̄]` for `Ctor_i : forall ā. τ̄_i -> T ā` (spec 05 §Join points and decision trees). | The field types are read from the constructor's declared type, instantiated at the kind arguments and type arguments of the scrutinee's type. A well-formed `Σ` gives a constructor the kind variables of its type constructor. |
+| The field types of a constructor in `switchCtor` are `τ_ij[ā := σ̄]` for `Ctor_i : forall ā. τ̄_i -> T ā` (spec 05 §Join points and decision trees). | The field types are read from the constructor's declared type, instantiated at the kind arguments and type arguments of the scrutinee's type. It reads the constructor's type, whose shape `sig_ok` fixes (§4.1). |
 | `region⟨ℓ⟩ θ` requires `dom(θ) = { k̄ }` (spec 06 §Run-time forms). | `θ` holds one value per cell, in the order of the layout. |
 | The rule for `openEffC [ρ] e` asks only `Γ ⊨ r # ρ` (spec 06 §Run-time forms), and the rule for `force ν` only `(ν : σ) ∈ Γ_N`. | Both rules also kind what they introduce (`ρ`, and `σ`), as the rules of the source forms do, so that every derivation's type and row are well kinded. |
 | Several source rules leave some of their annotations unkinded, such as the type of a `let` or the answer type of a `handle` (spec 05). | These annotations are kinded, as the Core type checker of the reference implementation does. |

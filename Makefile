@@ -28,9 +28,14 @@ $(DEPEND): $(SRCS) Makefile
 	@mkdir -p $(CACHE_DIR)
 	$(FSTAR) $(FSTAR_FLAGS) $(CACHE_FLAGS) --already_cached Prims,FStar --dep full $(SRCS) --output_deps_to $@
 
--include $(DEPEND)
+# The dependency graph is required: if it cannot be generated (for example
+# when `fstar` is not on PATH), make fails instead of verifying nothing.
+ifneq ($(strip $(MAKECMDGOALS)),clean)
+include $(DEPEND)
+endif
 
 verify: $(ALL_CHECKED_FILES)
+	@test -n "$(strip $(ALL_CHECKED_FILES))" || { echo "no modules to verify" >&2; exit 1; }
 
 $(CACHE_DIR)/%.checked:
 	$(FSTAR) $(FSTAR_FLAGS) $(CACHE_FLAGS) $<

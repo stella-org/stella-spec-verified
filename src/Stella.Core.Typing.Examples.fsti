@@ -7,6 +7,9 @@
  *   - `toMaybe` of spec 08 §Effects, the handler interpreting `Partial`
  *     into `Maybe` with a `full` clause that drops its continuation.
  *
+ * `ex_sig` satisfies `sig_ok` (`ex_sig_ok`). Two splits of a kinded variant
+ * row show that a split kinds neither its payloads nor its residual.
+ *
  * `ex_sig` declares:
  *
  *   - in `Prim`, every name of `Stella.Core.Prim`, as `prim_wf` requires
@@ -18,6 +21,7 @@ module Stella.Core.Typing.Examples
 open Stella.Core.Syntax
 open Stella.Core.Sig
 open Stella.Core.Context
+open Stella.Core.Kinding
 open Stella.Core.Sig.Wf
 open Stella.Core.Prim
 open Stella.Core.Typing.Aux
@@ -151,3 +155,29 @@ val to_maybe_typing : typing ex_sig [] (decl_ctx 0) [] true to_maybe to_maybe_ty
 (** * The names of `Prim` *)
 
 val ex_prim_wf : unit -> Lemma (prim_wf ex_sig)
+
+(** `ex_sig` satisfies the assumption of the metatheory. *)
+val ex_sig_ok : unit -> Lemma (sig_ok ex_sig)
+
+(** * Splits of a variant row
+
+    A split fixes the residual and the payload types up to type equality
+    alone, which kinding does not respect: `Int ⊎ Int ≡ Int` and
+    `ρ ⊎ ρ ≡ ρ`, the left sides being ill-kinded. So a split of a kinded row
+    kinds neither its payloads nor its residual, and a rule reading a split
+    kinds them itself. *)
+
+let key_y : key = SymbolKey "y"
+
+(** `( y : Int )` *)
+let row_y : typ = TRowExt (EntTy key_y t_int) TRowEmpty
+
+val split_payload_unkinded : unit ->
+  Lemma (check ex_sig (decl_ctx 0) row_y (KRow EType) /\
+         key_split row_y [(key_y, TRowUnion t_int t_int)] TRowEmpty /\
+         ~(check ex_sig (decl_ctx 0) (TRowUnion t_int t_int) KType))
+
+val split_residual_unkinded : unit ->
+  Lemma (check ex_sig (decl_ctx 0) row_y (KRow EType) /\
+         key_split row_y [] (TRowUnion row_y row_y) /\
+         ~(check ex_sig (decl_ctx 0) (TRowUnion row_y row_y) (KRow EType)))

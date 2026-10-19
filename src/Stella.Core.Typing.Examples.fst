@@ -221,3 +221,74 @@ let ex_prim_wf () =
   assert_norm (prim_tycon ex_sig prim_unit KType (TcData [prim_unit_ctor]));
   assert_norm (ex_sig.ctors prim_unit_ctor ==
                Some ({ ct_owner = prim_unit; ct_tag = 0; ct_arity = 0; ct_nk = 0; ct_ty = t_unit }))
+
+(* * The signature is well formed
+
+   Each condition quantifies over every name. A name `Σ` records is one of
+   finitely many, and its entry is a closed value whose condition holds by
+   normalization; any other name has no entry. *)
+
+let ex_tycons_wf () : Lemma (tycons_wf ex_sig) =
+  assert_norm (tycon_ok { tc_nk = 0;
+                          tc_kind = KArrow KType (KArrow (KRow EEffect) (KArrow KType KType));
+                          tc_class = TcIntrinsic ClsFunction });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow (KRow EType) KType;
+                          tc_class = TcIntrinsic ClsRecord });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow (KRow EType) KType;
+                          tc_class = TcIntrinsic ClsVariant });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KType; tc_class = TcIntrinsic ClsLiteral });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow KType KType; tc_class = TcIntrinsic ClsOpaque });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KType; tc_class = TcData [prim_unit_ctor] });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow KType KType;
+                          tc_class = TcData [prelude "Nothing"; prelude "Just"] })
+
+let ex_effects_wf () : Lemma (effects_wf ex_sig) =
+  assert_norm (effect_ok ex_sig partial_info)
+
+let ex_ctors_wf () : Lemma (ctors_wf ex_sig) =
+  assert_norm (scheme_ok ex_sig 0 t_unit);
+  assert_norm (scheme_ok ex_sig 0 nothing_ty);
+  assert_norm (scheme_ok ex_sig 0 just_ty)
+
+let ex_ctors_ok () : Lemma (ctors_ok ex_sig) =
+  assert_norm (ctor_ok ex_sig prim_unit_ctor
+                 { ct_owner = prim_unit; ct_tag = 0; ct_arity = 0; ct_nk = 0; ct_ty = t_unit });
+  assert_norm (ctor_ok ex_sig (prelude "Nothing")
+                 { ct_owner = prelude "Maybe"; ct_tag = 0; ct_arity = 0; ct_nk = 0; ct_ty = nothing_ty });
+  assert_norm (ctor_ok ex_sig (prelude "Just")
+                 { ct_owner = prelude "Maybe"; ct_tag = 1; ct_arity = 1; ct_nk = 0; ct_ty = just_ty })
+
+let ex_datas_ok () : Lemma (datas_ok ex_sig) =
+  assert_norm (data_ok ex_sig prim_unit [prim_unit_ctor]);
+  assert_norm (data_ok ex_sig (prelude "Maybe") [prelude "Nothing"; prelude "Just"])
+
+let ex_no_foreigns () : Lemma (foreigns_wf ex_sig /\ values_wf ex_sig /\ globals_disjoint ex_sig /\ foreigns_pure ex_sig) =
+  ()
+
+let ex_sig_wf () : Lemma (sig_wf ex_sig) =
+  ex_tycons_wf ();
+  ex_effects_wf ();
+  ex_ctors_wf ();
+  ex_no_foreigns ()
+
+let ex_globals_ok () : Lemma (globals_ok ex_sig) =
+  ex_ctors_ok ();
+  ex_datas_ok ();
+  ex_no_foreigns ()
+
+let ex_sig_ok () =
+  ex_sig_wf ();
+  ex_globals_ok ();
+  ex_prim_wf ()
+
+(* * Splits of a variant row *)
+
+let split_payload_unkinded () =
+  assert_norm (check ex_sig (decl_ctx 0) row_y (KRow EType));
+  assert_norm (key_split row_y [(key_y, TRowUnion t_int t_int)] TRowEmpty);
+  assert_norm (not (check ex_sig (decl_ctx 0) (TRowUnion t_int t_int) KType))
+
+let split_residual_unkinded () =
+  assert_norm (check ex_sig (decl_ctx 0) row_y (KRow EType));
+  assert_norm (key_split row_y [] (TRowUnion row_y row_y));
+  assert_norm (not (check ex_sig (decl_ctx 0) (TRowUnion row_y row_y) (KRow EType)))

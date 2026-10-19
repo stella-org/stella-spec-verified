@@ -74,8 +74,9 @@ let global_scheme (sg: sig) (q: qname) : option (global_class & nat & typ) =
     index 0, so `scons τ θ` (`τ .: θ`) is its accumulated substitution.
 
     The arrows a cursor consumes are pure: a constructor's by declaration
-    and a foreign's by D23. That is a condition on `Σ`, and the cursor does
-    not examine `ρ`. *)
+    and a foreign's by D23. That is a condition on `Σ`
+    (`Stella.Core.Sig.Wf.globals_ok`, `Stella.Core.Spine.Wf.cursor_arrow_pure`),
+    and the cursor does not examine `ρ`. *)
 let cursor_step (sg: sig) (t: typ) (th: tsub) (a: spine_arg) : option (typ & tsub) =
   match a, t with
   | STy s, TForall _ body -> Some (body, scons s th)
@@ -117,11 +118,84 @@ val cursor_snoc (sg: sig) (t: typ) (th: tsub) (args: list spine_arg) (a: spine_a
             | Some (t', th') -> cursor_step sg t' th' a
             | None -> None))
 
+val spine_cursor_snoc (sg: sig) (q: qname) (ks: list kind) (args: list spine_arg) (a: spine_arg)
+  : Lemma (spine_cursor sg q ks (L.append args [a]) ==
+           (match spine_cursor sg q ks args with
+            | Some (t', th') -> cursor_step sg t' th' a
+            | None -> None))
+
+(** * The cursor of a chain *)
+
+(** The cursor of `e` read as a global application chain; `None` when `e`
+    is no chain or its cursor is undefined. The type of the chain is
+    `θ(σ)` for `chain_cursor sg e = Some (σ, θ)`. *)
+let chain_cursor (sg: sig) (e: exp) : option (typ & tsub) =
+  match decompose_global_app e with
+  | Some (q, ks, args) -> spine_cursor sg q ks args
+  | None -> None
+
+(** The atomic reference starts the cursor. *)
+val chain_cursor_global (sg: sig) (q: qname) (ks: list kind)
+  : Lemma (chain_cursor sg (EGlobal q ks) ==
+           (match global_scheme sg q with
+            | Some (_, nk, t) -> if L.length ks = nk then Some (kinst_ty ks t, tvar) else None
+            | None -> None))
+
+(** Each `EApp`, `ETyApp` and `ECApp` node over a chain is one step of the
+    cursor. *)
+val chain_cursor_apply_arg (sg: sig) (e: exp) (a: spine_arg)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures chain_cursor sg (apply_arg e a) ==
+                   (match chain_cursor sg e with
+                    | Some (t', th') -> cursor_step sg t' th' a
+                    | None -> None))
+
+(** A function type stays one under a substitution, with its parts
+    substituted. The converse fails: a substitution can turn a variable
+    into a function type. *)
+val as_function_sub (sg: sig) (sigma: tsub) (t t1 r t2: typ)
+  : Lemma (requires as_function sg t == Some (t1, r, t2))
+          (ensures as_function sg (sub_ty sigma t) == Some (sub_ty sigma t1, sub_ty sigma r, sub_ty sigma t2))
+
 (** The accumulated substitution agrees with type application: the
     instance of `forall (a : κ). σ` under `θ`, applied to `τ`, is the
     instance of `σ` under `τ .: θ`. *)
 val cursor_instance_forall (s: typ) (th: tsub) (body: typ)
   : Lemma (subst1_ty s (sub_ty (up_tsub th) body) == sub_ty (scons s th) body)
+
+(** * Chains under substitution
+
+    A type substitution keeps the head of a chain and maps each type
+    argument and each value argument; a term substitution maps the value
+    arguments of a chain alone, and the cursor does not read them. *)
+
+let sub_arg (sigma: tsub) (a: spine_arg) : spine_arg =
+  match a with
+  | STy t -> STy (sub_ty sigma t)
+  | SConstr -> SConstr
+  | SVal v -> SVal (sub_ty_exp sigma v)
+
+let sub_tm_arg (sigma: esub) (a: spine_arg) : spine_arg =
+  match a with
+  | SVal v -> SVal (sub_tm sigma v)
+  | _ -> a
+
+val decompose_sub_ty_exp (sigma: tsub) (e: exp)
+  : Lemma (decompose_global_app (sub_ty_exp sigma e) ==
+           (match decompose_global_app e with
+            | Some (q, ks, args) -> Some (q, ks, L.map (sub_arg sigma) args)
+            | None -> None))
+
+(** A term substitution can put a chain where a variable stood, so a chain
+    is kept only where there is one. *)
+val decompose_sub_tm (sigma: esub) (e: exp)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures (let Some (q, ks, args) = decompose_global_app e in
+                    decompose_global_app (sub_tm sigma e) == Some (q, ks, L.map (sub_tm_arg sigma) args)))
+
+val chain_cursor_sub_tm (sg: sig) (sigma: esub) (e: exp)
+  : Lemma (requires Some? (decompose_global_app e))
+          (ensures chain_cursor sg (sub_tm sigma e) == chain_cursor sg e)
 
 (** * Saturation (spec 06 §Saturation is a position in the declared type) *)
 

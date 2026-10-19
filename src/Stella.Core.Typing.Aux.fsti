@@ -6,8 +6,11 @@
  *     location context `Γ_N` (design §4.3–§4.5);
  *   - the structural well-formedness of a local context;
  *   - the static value restriction `value_form`;
- *   - the projection of an occurrence out of the values of a `match`;
- *   - the lookups and instantiations the rules read from `Σ`.
+ *   - the projection of an occurrence out of the values of a `match`, and
+ *     the view of a variant value through its `weaken`s;
+ *   - the lookups and instantiations the rules read from `Σ`;
+ *   - the branch row of a `switchKey` and the split of a variant row into
+ *     it and a residual.
  *)
 module Stella.Core.Typing.Aux
 open Stella.Core.Syntax
@@ -137,6 +140,15 @@ let rec variant_payload (k: key) (v: exp) : Tot (option exp) (decreases v) =
   | EWeaken _ _ v1 -> variant_payload k v1
   | _ -> None
 
+(** The key and the payload of a variant value: `inject k [ρ] v` seen
+    through every `weaken` around it, giving `k` and `v`. It is `None` for
+    any other term. *)
+let rec variant_view (e: exp) : Tot (option (key & exp)) (decreases e) =
+  match e with
+  | EInject k _ v -> Some (k, v)
+  | EWeaken _ _ e -> variant_view e
+  | _ -> None
+
 (** `θ(o)`: the value at the occurrence `o`, following its projection path
     from the scrutinee values `θ` of a `match` (design §3.1). It is `None`
     where the path does not match the value. *)
@@ -187,12 +199,6 @@ let has_class (sg: sig) (q: qname) (c: tycon_class) : bool =
   match sg.tycons q with
   | Some ti -> ti.tc_class = c
   | None -> false
-
-(** `h τ1 … τn`, the arguments applied in order. *)
-let rec tapps (h: typ) (ts: list typ) : Tot typ (decreases ts) =
-  match ts with
-  | [] -> h
-  | t :: ts -> tapps (TApp h t) ts
 
 (** The type constructor at the head of an application. *)
 let rec ty_head (t: typ) : Tot (option qname) (decreases t) =
@@ -245,6 +251,24 @@ let rec layout_row (l: layout) : Tot typ (decreases l) =
   match l with
   | [] -> TRowEmpty
   | (k, t) :: l -> TRowExt (EntTy k t) (layout_row l)
+
+(** The row `( k1 : τ1 | … | kn : τn | ρ )`: the entries a `switchKey`
+    dispatches on, each key with the payload type its branch writes, in
+    front of `ρ`. A layout read as a row is the case `ρ = ()`. *)
+let rec brs_row (kts: list (key & typ)) (r: typ) : Tot typ (decreases kts) =
+  match kts with
+  | [] -> r
+  | (k, t) :: kts -> TRowExt (EntTy k t) (brs_row kts r)
+
+(** The variant row `ρ` splits into the entries `k̄ : τ̄` of the branches
+    and the residual row `ρ'`: `ρ ≡ ( k1 : τ1 | … | kn : τn | ρ' )`. The
+    split of an exhaustive `switchKey` has the residual `()`. It is a type
+    equality and nothing else, so every renaming, substitution and region
+    map keeps it (`Stella.Core.Typing.Aux.Lemmas`). For the same reason it
+    kinds neither the payloads nor the residual when `ρ` is kinded
+    (`Stella.Core.Typing.Examples.split_payload_unkinded`), so a rule that
+    reads a split kinds them itself. *)
+let key_split (r: typ) (kts: list (key & typ)) (r': typ) : bool = ty_eq r (brs_row kts r')
 
 (** `F ∖ k̄`: the entries whose key is not among `ks`. *)
 let rec drop_keys (ks: list key) (es: list centry) : Tot (list centry) (decreases es) =
