@@ -11,6 +11,7 @@ A Stella program is first parsed into a Concrete Syntax Tree (CST). Through name
 
 This is the cornerstone of Stella's correctness: even though syntax macros and the Elaborator run arbitrary user-defined functions—meaning they could behave erratically and generate malformed programs—the Core type checker acts as a final line of defense.
 In other words, the semantic correctness of the Core is Stella's primary **Trusted Computing Base** (TCB). The stability of Stella as a language depends heavily on how bedrock-solid this foundation is.
+
 To address this, this repository deeply embeds the semantics of Stella Core within [F*, a proof-oriented programming language with SMT-assisted proof semi-automation](https://fstar-lang.org/), and formally verifies its semantic soundness including progress, preservation.
 
 ## References
