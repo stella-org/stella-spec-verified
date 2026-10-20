@@ -5,21 +5,28 @@
  * ## Join-point scoping
  *
  * `jp_scoped n e` holds when every `jump` of `e` targets a join point of the
- * join context `Δ` in force at that `jump`, `n` being the size of `Δ` at
- * `e`'s root (design §4.3). It follows the typing rules (spec 04 §Join
- * points, spec 05 §Basic rules, spec 06 §Run-time forms): `letjoin` extends
- * `Δ` in both its definition and its body, and `Δ` is discarded (reset to
- * size 0) at
+ * join context `Δ` it tracks at that `jump`, `n` being the size of `Δ` at
+ * `e`'s root (design §4.3). `letjoin` extends `Δ` in both its definition
+ * and its body, `Δ` is discarded (reset to size 0) at the boundaries
  *
  *   - the body of `λ`, `Λ (a : κ)` and `Λ (_ : C)`;
  *   - the handled computation, the return clause and every operation
  *     clause of `handle`;
  *   - the body of `region` (not its initial values);
  *   - every initializer of `letrec` (not its body);
- *   - the subterm of `fill ν e`, and the cells and body of `region⟨ℓ⟩`.
+ *   - the subterm of `fill ν e`, and the cells and body of `region⟨ℓ⟩`,
  *
- * Every well-typed term is `jp_scoped |Δ|`. Scoping is a real restriction
- * on syntax: a `λ` body may syntactically mention a join index bound outside
+ * and every other position keeps the `Δ` of the form above it.
+ *
+ * `jp_scoped` over-approximates the typing rules (spec 04 §Join points,
+ * spec 05 §Basic rules, spec 06 §Run-time forms; `Stella.Core.Typing`).
+ * The rules empty `Δ` at the boundaries and also at every non-tail
+ * position, such as both sides of an application, the bound side of `let`,
+ * the scrutinees of `case` and the arguments of `jump`, where `jp_scoped`
+ * keeps it. The `Δ` of the rules at a position is thus a prefix of the one
+ * `jp_scoped` tracks there, its innermost join points, and every
+ * well-typed term is `jp_scoped |Δ|`. Scoping is a real restriction on
+ * syntax: a `λ` body may syntactically mention a join index bound outside
  * the `λ`, and only the discarding of `Δ` rules that out.
  *
  * ## The join-point value lemma

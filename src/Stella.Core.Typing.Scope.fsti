@@ -125,14 +125,14 @@ val occ_typing_scoped (#sg: sig) (#g: ctx) (#om: octx) (#o: occ) (#t: typ)
 
 (** * Closedness of the judgements *)
 
-val typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r)
+val typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r)
   : Lemma (requires wf_ctx sg g)
           (ensures exp_scoped g (L.length d) e /\ row_scoped g r)
 
-val exps_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
+val exps_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ)
-  (h: exps_typing sg ln g d tl r es ts)
+  (h: exps_typing sg ln g d r es ts)
   : Lemma (requires wf_ctx sg g)
           (ensures exps_scoped g (L.length d) es /\ row_scoped g r)
 
@@ -159,30 +159,30 @@ val match_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#
   : Lemma (requires wf_ctx sg g /\ lc_exps_at 0 th /\ in_rdom (frn_exps th) g)
           (ensures octx_scoped g om /\ row_scoped g r)
 
-val dt_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val dt_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#dt: dtree) (#t #r: typ)
-  (h: dt_typing sg ln g d tl om dt t r)
+  (h: dt_typing sg ln g d om dt t r)
   : Lemma (requires wf_ctx sg g /\ octx_scoped g om)
           (ensures dt_scoped g (L.length d) dt /\ row_scoped g r)
 
-val ctor_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val ctor_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree))
   (#t #r: typ)
-  (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r)
+  (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r)
   : Lemma (requires wf_ctx sg g /\ octx_scoped g om /\ occ_scoped g o)
           (ensures brs_scoped g (L.length d) bs /\ row_scoped g r)
 
-val lit_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val lit_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ)
-  (h: lit_brs_typing sg ln g d tl om lt bs t r)
+  (h: lit_brs_typing sg ln g d om lt bs t r)
   : Lemma (requires wf_ctx sg g /\ octx_scoped g om)
           (ensures brs_scoped g (L.length d) bs /\ row_scoped g r)
 
 (** The keys of the branches are those of `kts`, which the split of a kinded
     row puts in scope. *)
-val key_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val key_brs_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
   : Lemma (requires wf_ctx sg g /\ octx_scoped g om /\ occ_scoped g o /\
                     keys_scoped g (L.map fst kts))
           (ensures kbrs_scoped g (L.length d) bs /\ row_scoped g r)
@@ -195,15 +195,15 @@ val clauses_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#
 (** * Consequences *)
 
 (** The free join indices of a typed term are below `|Δ|`. *)
-val typing_jps_below (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
+val typing_jps_below (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
   (#t #r: typ)
-  (h: typing sg ln g d tl e t r)
+  (h: typing sg ln g d e t r)
   : Lemma (requires wf_ctx sg g) (ensures jps_below_exp (L.length d) e)
 
 (** A typed value has no free join index, so every join renaming fixes
     it. *)
-val typing_value_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp)
+val typing_value_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
   (#t #r: typ)
-  (h: typing sg ln g d tl v t r) (xi: ren)
+  (h: typing sg ln g d v t r) (xi: ren)
   : Lemma (requires wf_ctx sg g /\ V.is_value sg v)
           (ensures V.jp_scoped 0 v /\ ren_jp xi v == v)

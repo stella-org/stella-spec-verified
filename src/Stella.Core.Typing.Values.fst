@@ -69,43 +69,43 @@ let value_shape (sg: sig) (v: exp)
   | ELit _ | ELam _ _ _ | ERecEmpty | EOpaque _ _ | ETyLam _ _ | ECLam _ _ | EInject _ _ _
   | EWeaken _ _ _ | EOpenEff _ _ | EExtend _ _ _ | EGlobal _ _ | EApp _ _ | ETyApp _ _ | ECApp _ -> ()
 
-let rec value_typing #sg #ln #g #d #tl #v #t #r h d' tl' r'
-  : Pure (typing sg ln g d' tl' v t r')
+let rec value_typing #sg #ln #g #d #v #t #r h d' r'
+  : Pure (typing sg ln g d' v t r')
          (requires sig_ok sg /\ wf_ctx sg g /\ V.is_value sg v /\ check sg g r' (KRow EEffect))
          (ensures fun _ -> True)
          (decreases %[v; 2; h]) =
   value_shape sg v;
   match h with
-  | T_Global _ _ _ -> chain_value_typing h d' tl' r'
-  | T_App _ _ -> chain_value_typing h d' tl' r'
-  | T_TyApp _ _ -> chain_value_typing h d' tl' r'
-  | T_CApp _ _ -> chain_value_typing h d' tl' r'
-  | T_Chain hc _ -> chain_typing_shape hc; chain_value_typing h d' tl' r'
+  | T_Global _ _ _ -> chain_value_typing h d' r'
+  | T_App _ _ -> chain_value_typing h d' r'
+  | T_TyApp _ _ -> chain_value_typing h d' r'
+  | T_CApp _ _ -> chain_value_typing h d' r'
+  | T_Chain hc _ -> chain_typing_shape hc; chain_value_typing h d' r'
   | T_Conv h1 _ _ ->
     ty_eq_refl r';
-    T_Conv (value_typing h1 d' tl' r') () ()
-  | T_VariantValue #_ #_ #_ #_ #_ #_ #k #vp vr0 vr h1 sq1 h2 sq2 ->
+    T_Conv (value_typing h1 d' r') () ()
+  | T_VariantValue #_ #_ #_ #_ #_ #k #vp vr0 vr h1 sq1 h2 sq2 ->
     variant_view_value sg v k vp;
     variant_view_precedes v;
-    T_VariantValue vr0 vr (value_typing h1 d' false r') sq1 (value_typing h2 d' false r') sq2
-  | T_Lit #_ #_ #_ #_ #_ #c _ -> T_Lit #sg #ln #g #d' #tl' #c #r' ()
+    T_VariantValue vr0 vr (value_typing h1 [] r') sq1 (value_typing h2 [] r') sq2
+  | T_Lit #_ #_ #_ #_ #c _ -> T_Lit #sg #ln #g #d' #c #r' ()
   | T_Lam sq1 _ hb -> T_Lam sq1 () hb
   | T_TyLam sq1 sq2 _ hb -> T_TyLam sq1 sq2 () hb
   | T_CLam sq1 sq2 _ hb -> T_CLam sq1 sq2 () hb
   | T_RecEmpty _ -> T_RecEmpty ()
-  | T_Opaque #_ #_ #_ #_ #_ #w sq1 _ -> T_Opaque #sg #ln #g #d' #tl' #w #t #r' sq1 ()
-  | T_Extend #_ #_ #_ #_ #_ #k #e1 #e2 h1 h2 sq ->
+  | T_Opaque #_ #_ #_ #_ #w sq1 _ -> T_Opaque #sg #ln #g #d' #w #t #r' sq1 ()
+  | T_Extend #_ #_ #_ #_ #k #e1 #e2 h1 h2 sq ->
     value_extend sg k e1 e2;
-    T_Extend (value_typing h1 d' false r') (value_typing h2 d' false r') sq
-  | T_Inject #_ #_ #_ #_ #_ #k #r0 #e1 h1 sq1 sq2 ->
+    T_Extend (value_typing h1 [] r') (value_typing h2 [] r') sq
+  | T_Inject #_ #_ #_ #_ #k #r0 #e1 h1 sq1 sq2 ->
     value_inject sg k r0 e1;
-    T_Inject (value_typing h1 d' false r') sq1 sq2
-  | T_Weaken #_ #_ #_ #_ #_ #k #t1 #e1 h1 sq1 sq2 ->
+    T_Inject (value_typing h1 [] r') sq1 sq2
+  | T_Weaken #_ #_ #_ #_ #k #t1 #e1 h1 sq1 sq2 ->
     value_weaken sg k t1 e1;
-    T_Weaken (value_typing h1 d' false r') sq1 sq2
-  | T_OpenEff #_ #_ #_ #_ #_ #r1 #e1 h1 sq ->
+    T_Weaken (value_typing h1 [] r') sq1 sq2
+  | T_OpenEff #_ #_ #_ #_ #r1 #e1 h1 sq ->
     value_openeff sg r1 e1;
-    T_OpenEff (value_typing h1 d' false r') sq
+    T_OpenEff (value_typing h1 [] r') sq
   | T_Var _ _ -> false_elim ()
   | T_Let _ _ _ -> false_elim ()
   | T_LetRec _ _ _ -> false_elim ()
@@ -128,9 +128,9 @@ let rec value_typing #sg #ln #g #d #tl #v #t #r h d' tl' r'
   | T_Fill _ _ _ -> false_elim ()
   | T_RegionOpen _ _ _ _ _ -> false_elim ()
 
-and chain_value_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp)
-  (#t #r: typ) (h: typing sg ln g d tl v t r) (d': jctx) (tl': bool) (r': typ)
-  : Pure (typing sg ln g d' tl' v t r')
+and chain_value_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
+  (#t #r: typ) (h: typing sg ln g d v t r) (d': jctx) (r': typ)
+  : Pure (typing sg ln g d' v t r')
          (requires sig_ok sg /\ wf_ctx sg g /\ V.is_value sg v /\ check sg g r' (KRow EEffect) /\
                    (EGlobal? v \/ EApp? v \/ ETyApp? v \/ ECApp? v))
          (ensures fun _ -> True)
@@ -138,12 +138,12 @@ and chain_value_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (
   chain_value_facts sg v;
   value_chain_normalizes sg v;
   let hc = chain_normal h in
-  let hc' = value_chain_typing hc d' r' in
+  let hc' = value_chain_typing hc [] r' in
   let Some (s, th) = chain_cursor sg v in
   typing_regular h;
   ty_eq_sym t (sub_ty th s);
   ty_eq_refl r';
-  let h1 : typing sg ln g d' tl' v (sub_ty th s) r' = T_Chain #sg #ln #g #d' #tl' #v #s #th #r' hc' () in
+  let h1 : typing sg ln g d' v (sub_ty th s) r' = T_Chain #sg #ln #g #d' #v #s #th #r' hc' () in
   T_Conv h1 () ()
 
 and value_chain_typing #sg #ln #g #d #r #e hc d' r'
@@ -155,16 +155,16 @@ and value_chain_typing #sg #ln #g #d #r #e hc d' r'
   | TS_Head sq1 sq2 _ -> TS_Head sq1 sq2 ()
   | TS_Ty h0 sq1 sq2 -> TS_Ty (value_chain_typing h0 d' r') sq1 sq2
   | TS_Constr h0 sq1 sq2 -> TS_Constr (value_chain_typing h0 d' r') sq1 sq2
-  | TS_Val h0 sq hv -> TS_Val (value_chain_typing h0 d' r') sq (value_typing hv d' false r')
+  | TS_Val h0 sq hv -> TS_Val (value_chain_typing h0 d' r') sq (value_typing hv d' r')
 
-let rec values_typing #sg #ln #g #d #tl #r #es #ts h d' tl' r'
-  : Pure (exps_typing sg ln g d' tl' r' es ts)
+let rec values_typing #sg #ln #g #d #r #es #ts h d' r'
+  : Pure (exps_typing sg ln g d' r' es ts)
          (requires sig_ok sg /\ wf_ctx sg g /\ L.for_all (V.is_value sg) es /\
                    check sg g r' (KRow EEffect))
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TE_Nil _ -> TE_Nil ()
-  | TE_Cons h1 h2 -> TE_Cons (value_typing h1 d' tl' r') (values_typing h2 d' tl' r')
+  | TE_Cons h1 h2 -> TE_Cons (value_typing h1 d' r') (values_typing h2 d' r')
 
 let rec values_match_typing #sg #ln #g #d #r #th #om h d' r'
   : Pure (match_typing sg ln g d' r' th om)
@@ -175,8 +175,8 @@ let rec values_match_typing #sg #ln #g #d #r #th #om h d' r'
   | TM_Nil _ -> TM_Nil ()
   | TM_Cons #_ #_ #_ #_ #_ #_ #o #_ #_ #v sq h1 h2 ->
     proj_value sg th o v;
-    TM_Cons sq (value_typing h1 d' false r') (values_match_typing h2 d' r')
+    TM_Cons sq (value_typing h1 d' r') (values_match_typing h2 d' r')
 
-let value_typing_exists #sg #ln #g #d #tl #v #t #r h d' tl' r' =
-  let h' = value_typing h d' tl' r' in
-  FStar.Classical.exists_intro (fun (_: typing sg ln g d' tl' v t r') -> True) h'
+let value_typing_exists #sg #ln #g #d #v #t #r h d' r' =
+  let h' = value_typing h d' r' in
+  FStar.Classical.exists_intro (fun (_: typing sg ln g d' v t r') -> True) h'

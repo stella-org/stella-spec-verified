@@ -43,8 +43,8 @@ let chain_args_ok (sg: sig) (g: ctx) (e: exp) : bool =
   | Some (q, ks, args) -> spine_args_ok sg g q ks args
   | None -> false
 
-val typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r)
+val typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g)
           (ensures check sg g t KType /\ check sg g r (KRow EEffect))
 
@@ -62,9 +62,9 @@ val chain_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (
                     | Some (t, th) -> check sg g (sub_ty th t) KType
                     | None -> False))
 
-val exps_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
+val exps_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ)
-  (h: exps_typing sg ln g d tl r es ts)
+  (h: exps_typing sg ln g d r es ts)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g)
           (ensures tys_ok sg g ts /\ check sg g r (KRow EEffect))
 
@@ -84,26 +84,26 @@ val match_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (
   : Lemma (requires sig_ok sg /\ wf_ctx sg g)
           (ensures octx_ok sg g om /\ check sg g r (KRow EEffect))
 
-val dt_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val dt_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#dt: dtree) (#t #r: typ)
-  (h: dt_typing sg ln g d tl om dt t r)
+  (h: dt_typing sg ln g d om dt t r)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g /\ octx_ok sg g om)
           (ensures check sg g t KType /\ check sg g r (KRow EEffect))
 
-val ctor_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val ctor_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree))
   (#t #r: typ)
-  (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r)
+  (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r)
   : Lemma (check sg g t KType /\ check sg g r (KRow EEffect))
 
-val lit_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val lit_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ)
-  (h: lit_brs_typing sg ln g d tl om lt bs t r)
+  (h: lit_brs_typing sg ln g d om lt bs t r)
   : Lemma (check sg g t KType /\ check sg g r (KRow EEffect))
 
-val key_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val key_brs_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
   : Lemma (check sg g t KType /\ check sg g r (KRow EEffect))
 
 val clauses_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#ts: list typ)
@@ -112,7 +112,7 @@ val clauses_typing_regular (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (
   : Lemma (check sg g b KType /\ check sg g r (KRow EEffect))
 
 (** The `Ω` of a `case`, `{ s_i ↦ τ_i }`, is well formed. *)
-val case_octx_ok (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
+val case_octx_ok (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ)
-  (h: exps_typing sg ln g d tl r es ts)
+  (h: exps_typing sg ln g d r es ts)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g) (ensures octx_ok sg g (scrut_occs 0 ts))

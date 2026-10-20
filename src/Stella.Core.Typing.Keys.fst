@@ -32,7 +32,7 @@ let rec split_keys_struct (sg: sig) (g: ctx) (vr: typ) (kts0: list (key & typ)) 
 
 let key_split_keys_struct sg g vr kts r' = split_keys_struct sg g vr kts r' kts
 
-let rec key_brs_typing_keys #sg #ln #g #d #tl #om #o #kts #bs #t #r h =
+let rec key_brs_typing_keys #sg #ln #g #d #om #o #kts #bs #t #r h =
   match h with
   | TKB_Nil _ -> ()
   | TKB_Cons _ _ h' -> key_brs_typing_keys h'

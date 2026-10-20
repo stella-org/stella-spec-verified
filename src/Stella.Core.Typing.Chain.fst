@@ -112,7 +112,7 @@ let rec chain_typing_conv #sg #ln #g #d #r1 #e hc r2
     chain_typing_args_ok h0;
     chain_fun_regular sg g e0 s0 th0 a1 rho1 b1;
     ty_eq_refl (sub_ty th0 a1);
-    let hv' : typing sg ln g d false v (sub_ty th0 a1) r2 = T_Conv hv () () in
+    let hv' : typing sg ln g d v (sub_ty th0 a1) r2 = T_Conv hv () () in
     TS_Val #sg #ln #g #d #r2 #e0 #v #s0 #th0 #a1 #rho1 #b1 (chain_typing_conv h0 r2) sq hv'
 
 (* The prefix of a chain to normalize normalizes. *)
@@ -196,8 +196,8 @@ let variant_view_no_chain (e: exp)
 
 (* Normalization. *)
 
-let rec chain_normal #sg #ln #g #d #tl #e #t #r h
-  : Pure (chain_typing sg ln g d r e)
+let rec chain_normal #sg #ln #g #d #e #t #r h
+  : Pure (chain_typing sg ln g [] r e)
          (requires sig_ok sg /\ Some? (decompose_global_app e) /\
                    (Some? (chain_cursor sg e) \/ ctor_headed sg e))
          (ensures fun _ ->
@@ -206,14 +206,14 @@ let rec chain_normal #sg #ln #g #d #tl #e #t #r h
            | None -> False)
          (decreases h) =
   match h with
-  | T_Global #_ #_ #_ #_ #_ #q #ks #nk #t0 _ sq2 sq3 ->
+  | T_Global #_ #_ #_ #_ #q #ks #nk #t0 _ sq2 sq3 ->
     let Some (c, nk', t') = global_scheme sg q in
     global_type_scheme sg q nk t0;
     chain_cursor_global sg q ks;
     sub_ty_tvar (kinst_ty ks t0);
     ty_eq_refl (kinst_ty ks t0);
-    TS_Head #sg #ln #g #d #r #q #ks #c #nk #t0 () sq2 sq3
-  | T_App #_ #_ #_ #_ #_ #e1 #e2 #t1 #t2 h1 h2 ->
+    TS_Head #sg #ln #g #[] #r #q #ks #c #nk #t0 () sq2 sq3
+  | T_App #_ #_ #_ #_ #e1 #e2 #t1 #t2 h1 h2 ->
     prefix_normal sg e1 (SVal e2);
     let hc1 = chain_normal h1 in
     let Some (s1, th1) = chain_cursor sg e1 in
@@ -229,9 +229,9 @@ let rec chain_normal #sg #ln #g #d #tl #e #t #r h
     chain_typing_args_ok hc1;
     chain_fun_regular sg g e1 s1 th1 a1 rho1 b1;
     ty_eq_refl r;
-    let h2' : typing sg ln g d false e2 (sub_ty th1 a1) r = T_Conv h2 () () in
-    TS_Val #sg #ln #g #d #r #e1 #e2 #s1 #th1 #a1 #rho1 #b1 hc1 () h2'
-  | T_TyApp #_ #_ #_ #_ #_ #e0 #s #k #t0 h1 _ ->
+    let h2' : typing sg ln g [] e2 (sub_ty th1 a1) r = T_Conv h2 () () in
+    TS_Val #sg #ln #g #[] #r #e1 #e2 #s1 #th1 #a1 #rho1 #b1 hc1 () h2'
+  | T_TyApp #_ #_ #_ #_ #e0 #s #k #t0 h1 _ ->
     prefix_normal sg e0 (STy s);
     let hc0 = chain_normal h1 in
     let Some (s0, th0) = chain_cursor sg e0 in
@@ -240,8 +240,8 @@ let rec chain_normal #sg #ln #g #d #tl #e #t #r h
     ty_eq_forall_inv k k' t0 (sub_ty (up_tsub th0) b);
     ty_eq_sub (scons s tvar) t0 (sub_ty (up_tsub th0) b);
     cursor_instance_forall s th0 b;
-    TS_Ty #sg #ln #g #d #r #e0 #s #k' #b #th0 hc0 () ()
-  | T_CApp #_ #_ #_ #_ #_ #e0 #c #t0 h1 _ ->
+    TS_Ty #sg #ln #g #[] #r #e0 #s #k' #b #th0 hc0 () ()
+  | T_CApp #_ #_ #_ #_ #e0 #c #t0 h1 _ ->
     prefix_normal sg e0 SConstr;
     let hc0 = chain_normal h1 in
     let Some (s0, th0) = chain_cursor sg e0 in
@@ -249,9 +249,9 @@ let rec chain_normal #sg #ln #g #d #tl #e #t #r h
     let TConstr c' b = s0 in
     ty_eq_constr_inv c (sub_constr th0 c') t0 (sub_ty th0 b);
     entails_constr_eq (hyps g) c (sub_constr th0 c');
-    TS_Constr #sg #ln #g #d #r #e0 #c' #b #th0 hc0 () ()
-  | T_Chain #_ #_ #_ #_ #_ #_ #t0 #th0 hc _ -> ty_eq_refl (sub_ty th0 t0); hc
-  | T_Conv #_ #_ #_ #_ #_ #_ #t1 #r1 h1 _ _ ->
+    TS_Constr #sg #ln #g #[] #r #e0 #c' #b #th0 hc0 () ()
+  | T_Chain #_ #_ #_ #_ #_ #t0 #th0 hc _ -> ty_eq_refl (sub_ty th0 t0); hc
+  | T_Conv #_ #_ #_ #_ #_ #t1 #r1 h1 _ _ ->
     let hc = chain_normal h1 in
     let Some (s, th) = chain_cursor sg e in
     ty_eq_sym t1 t;
@@ -290,8 +290,8 @@ let rec chain_normal #sg #ln #g #d #tl #e #t #r h
   | T_RegionOpen _ _ _ _ _ -> false_elim ()
   | T_Opaque _ _ -> false_elim ()
 
-let chain_normal_exists #sg #ln #g #d #tl #e #t #r h =
+let chain_normal_exists #sg #ln #g #d #e #t #r h =
   let hc = chain_normal h in
-  FStar.Classical.exists_intro (fun (_: chain_typing sg ln g d r e) -> True) hc
+  FStar.Classical.exists_intro (fun (_: chain_typing sg ln g [] r e) -> True) hc
 
 let value_chain_normalizes sg e = ()

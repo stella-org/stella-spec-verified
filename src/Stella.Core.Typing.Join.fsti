@@ -4,16 +4,19 @@
  * A join renaming `ξ` maps the join context `Δ` into `Δ'` when each join
  * point of `Δ` is found in `Δ'` at its image with the same signature
  * (`jren_ok`). Typing is preserved: `Γ; Δ ⊢ e : τ ! ρ` gives
- * `Γ; Δ' ⊢ ξ(e) : τ ! ρ`, with the same tail flag, and the same for every
- * judgement that carries `Δ`. Prepending a join point to `Δ` under
- * `ren_jp (shift 1)` is the weakening (`typing_weaken_jp`).
+ * `Γ; Δ' ⊢ ξ(e) : τ ! ρ`, and the same for every judgement that carries
+ * `Δ`. Prepending a join point to `Δ` under `ren_jp (shift 1)` is the
+ * weakening (`typing_weaken_jp`). A term typed under `Δ = []` is typed,
+ * unchanged, under every `Δ` (`typing_jp_nil`).
  *
- * The bodies that discard `Δ` mention no free join index
- * (`Stella.Core.Typing.Scope`), so the renaming fixes them and their
- * derivations stand as they are; so does every run-time value, which is how
- * the values of a `match` and a variant value retyped by `T_VariantValue`
- * are kept. The scope facts need a well-formed context (`wf_ctx`), whose
- * layouts have structural keys (`Stella.Core.Typing.Scope`).
+ * A non-tail subterm is typed under `Δ = []`, which `ξ` maps into `[]`,
+ * so it is renamed there. The bodies behind a boundary (`λ`, `handle`,
+ * `region`, …) mention no free join index (`Stella.Core.Typing.Scope`), so
+ * the renaming fixes them and their derivations stand as they are; so does
+ * every run-time value, which is how the values of a `match` and a variant
+ * value retyped by `T_VariantValue` are kept. The scope facts need a
+ * well-formed context (`wf_ctx`), whose layouts have structural keys
+ * (`Stella.Core.Typing.Scope`).
  *)
 module Stella.Core.Typing.Join
 open Stella.Core.Syntax
@@ -43,16 +46,16 @@ val proj_value (sg: sig) (th: list exp) (o: occ) (v: exp)
   : Lemma (requires L.for_all (V.is_value sg) th /\ proj sg th o == Some v)
           (ensures V.is_value sg v)
 
-val typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (xi: ren) (d': jctx)
-  : Pure (typing sg ln g d' tl (ren_jp xi e) t r)
+val typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (xi: ren) (d': jctx)
+  : Pure (typing sg ln g d' (ren_jp xi e) t r)
          (requires wf_ctx sg g /\ jren_ok xi d d')
          (ensures fun _ -> True)
 
-val exps_typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
+val exps_typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ)
-  (h: exps_typing sg ln g d tl r es ts) (xi: ren) (d': jctx)
-  : Pure (exps_typing sg ln g d' tl r (ren_jp_exps xi es) ts)
+  (h: exps_typing sg ln g d r es ts) (xi: ren) (d': jctx)
+  : Pure (exps_typing sg ln g d' r (ren_jp_exps xi es) ts)
          (requires wf_ctx sg g /\ jren_ok xi d d')
          (ensures fun _ -> True)
 
@@ -70,16 +73,24 @@ val match_typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#
          (requires wf_ctx sg g /\ jren_ok xi d d' /\ L.for_all (V.is_value sg) th)
          (ensures fun _ -> True)
 
-val dt_typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val dt_typing_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#dt: dtree) (#t #r: typ)
-  (h: dt_typing sg ln g d tl om dt t r) (xi: ren) (d': jctx)
-  : Pure (dt_typing sg ln g d' tl om (ren_jp_dt xi dt) t r)
+  (h: dt_typing sg ln g d om dt t r) (xi: ren) (d': jctx)
+  : Pure (dt_typing sg ln g d' om (ren_jp_dt xi dt) t r)
          (requires wf_ctx sg g /\ jren_ok xi d d')
          (ensures fun _ -> True)
 
 (** Weakening: one more join point in front of `Δ`. *)
-val typing_weaken_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (jt: list typ & typ & typ)
-  : Pure (typing sg ln g (jt :: d) tl (ren_jp (shift 1) e) t r)
+val typing_weaken_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (jt: list typ & typ & typ)
+  : Pure (typing sg ln g (jt :: d) (ren_jp (shift 1) e) t r)
          (requires wf_ctx sg g)
          (ensures fun _ -> True)
+
+(** Weakening from no join point: a term typed under `Δ = []` is typed, as
+    it is, under any `Δ`. It mentions no free join index
+    (`Stella.Core.Typing.Scope`), so a join renaming fixes it, and every
+    renaming maps `[]` into `Δ`. *)
+val typing_jp_nil (#sg: sig) (#ln: lctx) (#g: ctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g [] e t r) (d: jctx)
+  : Pure (typing sg ln g d e t r) (requires wf_ctx sg g) (ensures fun _ -> True)

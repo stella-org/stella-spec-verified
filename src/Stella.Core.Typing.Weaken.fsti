@@ -49,17 +49,17 @@ val ty_ren_ok_comp (xi zeta: ren) (g1 g2 g3: ctx)
 val ty_ren_ok_shifts (g: ctx) (ks: list kind)
   : Lemma (ty_ren_ok (shift (L.length ks)) g (push_tvars g ks))
 
-val typing_weaken_tvar (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
+val typing_weaken_tvar (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
   (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (k: kind)
-  : Pure (typing sg ln (push_tvar g k) (ren_jctx (shift 1) d) tl (ren_ty_exp (shift 1) e)
+  (h: typing sg ln g d e t r) (k: kind)
+  : Pure (typing sg ln (push_tvar g k) (ren_jctx (shift 1) d) (ren_ty_exp (shift 1) e)
             (ren_ty (shift 1) t) (ren_ty (shift 1) r))
          (requires sig_ok sg)
          (ensures fun _ -> True)
 
-val typing_weaken_tvars (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r) (ks: list kind)
-  : Pure (typing sg ln (push_tvars g ks) (ren_jctx (shift (L.length ks)) d) tl
+val typing_weaken_tvars (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r) (ks: list kind)
+  : Pure (typing sg ln (push_tvars g ks) (ren_jctx (shift (L.length ks)) d)
             (ren_ty_exp (shift (L.length ks)) e) (ren_ty (shift (L.length ks)) t)
             (ren_ty (shift (L.length ks)) r))
          (requires sig_ok sg)
@@ -76,14 +76,14 @@ val tm_ren_ok_comp (xi zeta: ren) (g1 g2 g3: ctx)
 val tm_ren_ok_shifts (g: ctx) (ts: list typ)
   : Lemma (tm_ren_ok (shift (L.length ts)) g (push_vars g ts))
 
-val typing_weaken_var (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (t': typ)
-  : typing sg ln (push_var g t') d tl (ren_tm (shift 1) e) t r
+val typing_weaken_var (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (t': typ)
+  : typing sg ln (push_var g t') d (ren_tm (shift 1) e) t r
 
-val typing_weaken_vars (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
+val typing_weaken_vars (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
   (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (ts: list typ)
-  : typing sg ln (push_vars g ts) d tl (ren_tm (shift (L.length ts)) e) t r
+  (h: typing sg ln g d e t r) (ts: list typ)
+  : typing sg ln (push_vars g ts) d (ren_tm (shift (L.length ts)) e) t r
 
 (** * Extending the context in place *)
 
@@ -94,19 +94,19 @@ let ctx_weaker (g g': ctx) : prop =
   ctx_ext g g' /\ layouts_ext g g' /\
   (forall (i: nat). i < L.length g.vars ==> L.nth g'.vars i == L.nth g.vars i)
 
-val typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (g': ctx)
-  : Pure (typing sg ln g' d tl e t r) (requires ctx_weaker g g') (ensures fun _ -> True)
+val typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (g': ctx)
+  : Pure (typing sg ln g' d e t r) (requires ctx_weaker g g') (ensures fun _ -> True)
 
 (** Assumptions, and hypotheses in general. *)
-val typing_weaken_assumps (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r) (cs: list constr)
-  : typing sg ln (add_assumps g cs) d tl e t r
+val typing_weaken_assumps (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r) (cs: list constr)
+  : typing sg ln (add_assumps g cs) d e t r
 
 (** A fresh region with any layout, added to `regions` (`Γ_R`). *)
-val typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r) (a: atom) (l: layout)
-  : Pure (typing sg ln ({ g with regions = (a, l) :: g.regions }) d tl e t r)
+val typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r) (a: atom) (l: layout)
+  : Pure (typing sg ln ({ g with regions = (a, l) :: g.regions }) d e t r)
          (requires ~(L.mem a (rdom g)))
          (ensures fun _ -> True)
 
@@ -118,20 +118,20 @@ let lctx_incl (ln ln': lctx) : prop =
 
 val lctx_incl_append (ln ln': lctx) : Lemma (lctx_incl ln (L.append ln ln'))
 
-val typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (ln': lctx)
-  : Pure (typing sg ln' g d tl e t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
+val typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (ln': lctx)
+  : Pure (typing sg ln' g d e t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
 
-val exps_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (ln': lctx)
-  : Pure (exps_typing sg ln' g d tl r es ts) (requires lctx_incl ln ln') (ensures fun _ -> True)
+val exps_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (ln': lctx)
+  : Pure (exps_typing sg ln' g d r es ts) (requires lctx_incl ln ln') (ensures fun _ -> True)
 
 (** * Closed terms *)
 
 (** A term typed with no term variable in scope, under every extension of
     the hypotheses and regions of its context and of `Γ_N`. *)
-val typing_closed_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r) (ln': lctx) (g': ctx)
-  : Pure (typing sg (L.append ln ln') g' d tl e t r)
+val typing_closed_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r) (ln': lctx) (g': ctx)
+  : Pure (typing sg (L.append ln ln') g' d e t r)
          (requires g.vars == [] /\ ctx_ext g g' /\ layouts_ext g g')
          (ensures fun _ -> True)

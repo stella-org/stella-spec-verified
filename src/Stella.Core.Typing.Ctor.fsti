@@ -30,30 +30,29 @@ module L = FStar.List.Tot
 
 (** * Lists of typed terms *)
 
-val exps_typing_length (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts)
+val exps_typing_length (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts)
   : Lemma (L.length es == L.length ts)
 
-val exps_typing_snoc (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
+val exps_typing_snoc (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ) (#e: exp) (#t: typ)
-  (h: exps_typing sg ln g d tl r es ts) (h1: typing sg ln g d tl e t r)
-  : exps_typing sg ln g d tl r (L.append es [e]) (L.append ts [t])
+  (h: exps_typing sg ln g d r es ts) (h1: typing sg ln g d e t r)
+  : exps_typing sg ln g d r (L.append es [e]) (L.append ts [t])
 
 (** The `j`-th term of a typed list has the `j`-th type. *)
-val exps_typing_nth (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (j: nat) (e: exp) (t: typ)
-  : Pure (typing sg ln g d tl e t r)
+val exps_typing_nth (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (j: nat) (e: exp) (t: typ)
+  : Pure (typing sg ln g d e t r)
          (requires L.nth es j == Some e /\ L.nth ts j == Some t)
          (ensures fun _ -> True)
 
 (** * Chains *)
 
 (** The value arguments of a typed chain have the domains its cursor
-    meets, at the ambient row of the chain, under its `Δ`, out of tail
-    position. *)
+    meets, at the ambient row of the chain, under its `Δ`. *)
 val chain_typing_domains (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#e: exp)
   (hc: chain_typing sg ln g d r e)
-  : exps_typing sg ln g d false r (chain_value_args e) (chain_domains sg e)
+  : exps_typing sg ln g d r (chain_value_args e) (chain_domains sg e)
 
 (** A saturated constructor chain `C [[κ̄]] [σ̄] v̄` has the type
     `T [[κ̄]] σ̄`, `T` the owner of `C`; it has `ct_arity` value arguments,
@@ -61,7 +60,7 @@ val chain_typing_domains (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (
 val ctor_chain_fields_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#e: exp)
   (hc: chain_typing sg ln g d r e) (c: qname) (ks: list kind) (args: list spine_arg)
   (ci: ctor_info) (t: typ) (th: tsub) (fs: list typ)
-  : Pure (exps_typing sg ln g d false r (value_args args) fs)
+  : Pure (exps_typing sg ln g d r (value_args args) fs)
          (requires sig_ok sg /\ decompose_global_app e == Some (c, ks, args) /\
                    sg.ctors c == Some ci /\ chain_cursor sg e == Some (t, th) /\ saturated sg t /\
                    ctor_fields sg c ks (ty_args args) == Some fs)
@@ -80,9 +79,9 @@ val ctor_chain_fields (sg: sig) (e: exp) (c: qname) (ks: list kind) (args: list 
 (** * Lists of typed terms up to type equality *)
 
 (** Each term converted to a type equal to its own, kinded. *)
-val exps_typing_conv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (ts': list typ)
-  : Pure (exps_typing sg ln g d tl r es ts')
+val exps_typing_conv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (ts': list typ)
+  : Pure (exps_typing sg ln g d r es ts')
          (requires tys_eq ts ts' /\ tys_ok sg g ts' /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True)
 
@@ -109,13 +108,12 @@ val ctor_fields_tys_eq (sg: sig) (c: qname) (ks: list kind) (ss ss': list typ)
     constructor of the data type `T`, as `switchCtor` reads it: whatever
     rules derive its type, `C` is owned by `T`, `κ̄ = κ̄'`, and the value
     arguments `v̄` have the fields `ctor_fields C κ̄' σ̄'` that the branch on
-    `C` adds to `Ω`, at the row and the `Δ` of the value, out of tail
-    position. *)
-val ctor_value_fields_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp)
-  (#t_o #r: typ) (h: typing sg ln g d tl v t_o r) (c: qname) (ks: list kind)
+    `C` adds to `Ω`, at the row of the value, under `Δ = []`. *)
+val ctor_value_fields_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
+  (#t_o #r: typ) (h: typing sg ln g d v t_o r) (c: qname) (ks: list kind)
   (args: list spine_arg) (tq: qname) (ks': list kind) (ss': list typ) (cs: list qname)
   (fs': list typ)
-  : Pure (exps_typing sg ln g d false r (value_args args) fs')
+  : Pure (exps_typing sg ln g [] r (value_args args) fs')
          (requires sig_ok sg /\ decompose_global_app v == Some (c, ks, args) /\ is_ctor sg c /\
                    ty_eq t_o (tapps (TCon tq ks') ss') /\
                    check sg g (tapps (TCon tq ks') ss') KType /\

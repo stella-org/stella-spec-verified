@@ -28,9 +28,9 @@ open Stella.Core.Typing.Examples
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 
-let retype (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
-           (h: typing ex_sig [] g d tl e t1 r1)
-  : Pure (typing ex_sig [] g d tl e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
+let retype (#g: ctx) (#d: jctx) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
+           (h: typing ex_sig [] g d e t1 r1)
+  : Pure (typing ex_sig [] g d e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
   h
 
 (* * Building chains *)
@@ -53,7 +53,7 @@ let chain_ty (#g: ctx) (#d: jctx) (#r: typ) (#e: exp) (s: typ) (h: chain_typing 
   | Some (TForall k t, th) -> TS_Ty #ex_sig #[] #g #d #r #e #s #k #t #th h () ()
 
 let chain_val (#g: ctx) (#d: jctx) (#r: typ) (#e: exp) (#v: exp) (t1: typ)
-  (h: chain_typing ex_sig [] g d r e) (hv: typing ex_sig [] g d false v t1 r)
+  (h: chain_typing ex_sig [] g d r e) (hv: typing ex_sig [] g d v t1 r)
   : Pure (chain_typing ex_sig [] g d r (EApp e v))
          (requires (match chain_cursor ex_sig e with
                     | Some (t, th) ->
@@ -68,21 +68,21 @@ let chain_val (#g: ctx) (#d: jctx) (#r: typ) (#e: exp) (#v: exp) (t1: typ)
      | Some (a, ra, b) ->
        TS_Val #ex_sig #[] #g #d #r #e #v #t #th #a #ra #b h () hv)
 
-let chain_typed (#g: ctx) (#d: jctx) (#r: typ) (#e: exp) (tl: bool) (t: typ)
-  (h: chain_typing ex_sig [] g d r e)
-  : Pure (typing ex_sig [] g d tl e t r)
+let chain_typed (#g: ctx) (#r: typ) (#e: exp) (d: jctx) (t: typ)
+  (h: chain_typing ex_sig [] g [] r e)
+  : Pure (typing ex_sig [] g d e t r)
          (requires (match chain_cursor ex_sig e with
                     | Some (s, th) -> sub_ty th s == t
                     | None -> False))
          (ensures fun _ -> True) =
   match chain_cursor ex_sig e with
-  | Some (s, th) -> retype t r (T_Chain #ex_sig #[] #g #d #tl #e #s #th #r h ())
+  | Some (s, th) -> retype t r (T_Chain #ex_sig #[] #g #d #e #s #th #r h ())
 
-let lit_typing (g: ctx) (d: jctx) (tl: bool) (c: lit) (t r: typ)
-  : Pure (typing ex_sig [] g d tl (ELit c) t r)
+let lit_typing (g: ctx) (d: jctx) (c: lit) (t r: typ)
+  : Pure (typing ex_sig [] g d (ELit c) t r)
          (requires lit_type c == t /\ check ex_sig g r (KRow EEffect))
          (ensures fun _ -> True) =
-  retype t r (T_Lit #ex_sig #[] #g #d #tl #c #r ())
+  retype t r (T_Lit #ex_sig #[] #g #d #c #r ())
 
 (* * Chains at a non-empty row *)
 
@@ -110,15 +110,15 @@ let just_one_chain (r: typ)
                   | Some (a, _, _) -> sub_ty th a == t_int
                   | None -> False)
                | None -> False);
-  chain_val t_int h1 (lit_typing g0 [] false (LInt 1l) t_int r)
+  chain_val t_int h1 (lit_typing g0 [] (LInt 1l) t_int r)
 
-let just_one_at (tl: bool) (r: typ)
-  : Pure (typing ex_sig [] g0 [] tl just_one (maybe_ty t_int) r)
+let just_one_at (r: typ)
+  : Pure (typing ex_sig [] g0 [] just_one (maybe_ty t_int) r)
          (requires check ex_sig g0 r (KRow EEffect)) (ensures fun _ -> True) =
   assert_norm (match chain_cursor ex_sig just_one with
                | Some (s, th) -> sub_ty th s == maybe_ty t_int
                | None -> False);
-  chain_typed tl (maybe_ty t_int) (just_one_chain r)
+  chain_typed [] (maybe_ty t_int) (just_one_chain r)
 
 let open_just_one_typing =
   assert_norm (check ex_sig g0 TRowEmpty (KRow EEffect));
@@ -127,14 +127,14 @@ let open_just_one_typing =
   assert_norm (entails (hyps g0) (CDisj TRowEmpty partial_row));
   assert_norm (ty_eq (TRowUnion TRowEmpty partial_row) partial_row);
   ty_eq_refl (maybe_ty t_int);
-  let h : typing ex_sig [] g0 [] true open_just_one (maybe_ty t_int) (TRowUnion TRowEmpty partial_row) =
-    T_OpenEffC (just_one_at false TRowEmpty) ()
+  let h : typing ex_sig [] g0 [] open_just_one (maybe_ty t_int) (TRowUnion TRowEmpty partial_row) =
+    T_OpenEffC (just_one_at TRowEmpty) ()
   in
   T_Conv h () ()
 
 let just_one_typing =
   assert_norm (check ex_sig g0 partial_row (KRow EEffect));
-  just_one_at true partial_row
+  just_one_at partial_row
 
 let konst_one_value () = assert_norm (V.is_value ex_sig konst_one)
 
@@ -160,14 +160,14 @@ let konst_one_chain (r: typ)
                   | Some (a, _, _) -> sub_ty th a == t_int
                   | None -> False)
                | None -> False);
-  chain_val t_int h1 (lit_typing g0 [] false (LInt 1l) t_int r)
+  chain_val t_int h1 (lit_typing g0 [] (LInt 1l) t_int r)
 
 let konst_one_typing =
   assert_norm (check ex_sig g0 partial_row (KRow EEffect));
   assert_norm (match chain_cursor ex_sig konst_one with
                | Some (s, th) -> sub_ty th s == t_fun t_int TRowEmpty t_int
                | None -> False);
-  chain_typed true (t_fun t_int TRowEmpty t_int) (konst_one_chain partial_row)
+  chain_typed [] (t_fun t_int TRowEmpty t_int) (konst_one_chain partial_row)
 
 let konst_one_two_redex () = assert_norm (V.foreign_redex ex_sig konst_one_two)
 
@@ -180,31 +180,31 @@ let konst_one_two_typing =
                   | None -> False)
                | None -> False);
   let h = chain_val t_int (konst_one_chain partial_row)
-            (lit_typing g0 [] false (LInt 2l) t_int partial_row) in
+            (lit_typing g0 [] (LInt 2l) t_int partial_row) in
   assert_norm (match chain_cursor ex_sig konst_one_two with
                | Some (s, th) -> sub_ty th s == t_int
                | None -> False);
-  chain_typed true t_int h
+  chain_typed [] t_int h
 
 (* * Region frames *)
 
 (* The frame at a type variable. *)
 
-let rec frame_row_closed (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d tl e t r)
+let rec frame_row_closed (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d e t r)
   : Lemma (requires e == ERegionOpen a cs b)
           (ensures exists (r0: typ). ty_eq r0 r /\ check ex_sig (closed_ctx g.regions) r0 (KRow EEffect))
           (decreases h) =
   match h with
   | T_RegionOpen _ _ _ _ _ -> ty_eq_refl r
-  | T_Conv #_ #_ #_ #_ #_ #_ #_ #r1 h' _ _ ->
+  | T_Conv #_ #_ #_ #_ #_ #_ #r1 h' _ _ ->
     frame_row_closed a cs b h';
     introduce forall (r0: typ). ty_eq r0 r1 ==> ty_eq r0 r
     with introduce _ ==> _
     with ty_eq_trans r0 r1 r
 
-let rec lam_frame_row_closed (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (t1 r': typ) (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d tl e t r)
+let rec lam_frame_row_closed (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (t1 r': typ) (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d e t r)
   : Lemma (requires e == ELam t1 r' (ERegionOpen a cs b))
           (ensures exists (r0: typ). ty_eq r0 r' /\ check ex_sig (closed_ctx g.regions) r0 (KRow EEffect))
           (decreases h) =
@@ -212,8 +212,8 @@ let rec lam_frame_row_closed (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: 
   | T_Lam _ _ hb -> frame_row_closed a cs b hb
   | T_Conv h' _ _ -> lam_frame_row_closed t1 r' a cs b h'
 
-let rec tylam_frame_row_closed (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (k: kind) (t1 r': typ) (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d tl e t r)
+let rec tylam_frame_row_closed (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (k: kind) (t1 r': typ) (a: atom) (cs: list (key & exp)) (b: exp) (h: typing ex_sig [] g d e t r)
   : Lemma (requires e == ETyLam k (ELam t1 r' (ERegionOpen a cs b)))
           (ensures exists (r0: typ).
                      ty_eq r0 r' /\ check ex_sig (closed_ctx (push_tvar g k).regions) r0 (KRow EEffect))
@@ -238,7 +238,7 @@ let closed_not_var (rs: list (atom & layout)) (r0: typ) (i: nat)
   ty_eq_trans TRowEmpty r0 partial_row;
   assert_norm (not (ty_eq TRowEmpty partial_row))
 
-let frame_at_var_untypable #d #tl #t #r h =
+let frame_at_var_untypable #d #t #r h =
   tylam_frame_row_closed (KRow EEffect) t_unit (TVar 0) reg_a [] (EGlobal prim_unit_ctor []) h;
   let rs = (push_tvar g_run (KRow EEffect)).regions in
   introduce forall (r0: typ). ty_eq r0 (TVar 0) /\ check ex_sig (closed_ctx rs) r0 (KRow EEffect) ==> False
@@ -255,7 +255,7 @@ let g_u : ctx = push_var g_run t_unit
 
 (* The frame, in a context whose regions are those of `g_run`. *)
 let frame_in (g: ctx)
-  : Pure (typing ex_sig [] g [] false frame t_unit TRowEmpty)
+  : Pure (typing ex_sig [] g [] frame t_unit TRowEmpty)
          (requires g.regions == [(reg_a, [])] /\ check ex_sig g region_row (KRow EEffect))
          (ensures fun _ -> True) =
   assert_norm (check ex_sig (closed_ctx [(reg_a, [])]) t_unit KType);
@@ -264,10 +264,10 @@ let frame_in (g: ctx)
   assert_norm (global_type ex_sig prim_unit_ctor == Some (0, t_unit));
   assert_norm (kinst_ty [] t_unit == t_unit);
   assert_norm (region_row == TRowExt (EntRegion (RFree reg_a)) TRowEmpty);
-  let hb : typing ex_sig [] g [] true (EGlobal prim_unit_ctor []) (kinst_ty [] t_unit) region_row =
-    T_Global #ex_sig #[] #g #[] #true #prim_unit_ctor #[] #0 #t_unit #region_row () () ()
+  let hb : typing ex_sig [] g [] (EGlobal prim_unit_ctor []) (kinst_ty [] t_unit) region_row =
+    T_Global #ex_sig #[] #g #[] #prim_unit_ctor #[] #0 #t_unit #region_row () () ()
   in
-  T_RegionOpen #ex_sig #[] #g #[] #false #reg_a #[] #(EGlobal prim_unit_ctor []) #[] #t_unit
+  T_RegionOpen #ex_sig #[] #g #[] #reg_a #[] #(EGlobal prim_unit_ctor []) #[] #t_unit
     #TRowEmpty () () () TC_Nil (retype t_unit region_row hb)
 
 let frame_contractum_inst () =
@@ -284,12 +284,12 @@ let frame_typing_inst =
   frame_in g_u
 
 (* `openEffC [ρ] frame : Unit ! ρ`, `ρ` disjoint from `()`. *)
-let open_frame (g: ctx) (r: typ) (hf: typing ex_sig [] g [] false frame t_unit TRowEmpty)
-  : Pure (typing ex_sig [] g [] true (EOpenEffC r frame) t_unit r)
+let open_frame (g: ctx) (r: typ) (hf: typing ex_sig [] g [] frame t_unit TRowEmpty)
+  : Pure (typing ex_sig [] g [] (EOpenEffC r frame) t_unit r)
          (requires entails (hyps g) (CDisj TRowEmpty r) /\ check ex_sig g r (KRow EEffect) /\
                    check ex_sig g t_unit KType)
          (ensures fun _ -> True) =
-  let h : typing ex_sig [] g [] true (EOpenEffC r frame) t_unit (TRowUnion TRowEmpty r) =
+  let h : typing ex_sig [] g [] (EOpenEffC r frame) t_unit (TRowUnion TRowEmpty r) =
     T_OpenEffC hf ()
   in
   ty_eq_refl t_unit;
@@ -297,7 +297,7 @@ let open_frame (g: ctx) (r: typ) (hf: typing ex_sig [] g [] false frame t_unit T
   T_Conv h () ()
 
 let frame_fn_typing
-  : typing ex_sig [] g_tv [] true frame_fn (t_fun t_unit (TVar 0) t_unit) TRowEmpty =
+  : typing ex_sig [] g_tv [] frame_fn (t_fun t_unit (TVar 0) t_unit) TRowEmpty =
   assert_norm (entails (hyps g_tv_u) (CDisj TRowEmpty (TVar 0)));
   assert_norm (check ex_sig g_tv_u (TVar 0) (KRow EEffect));
   assert_norm (check ex_sig g_tv_u t_unit KType);
@@ -311,7 +311,7 @@ let frame_redex_typing =
   assert_norm (check ex_sig g_run TRowEmpty (KRow EEffect));
   assert_norm (check ex_sig g_run region_row (KRow EEffect));
   assert_norm (subst1_ty region_row (t_fun t_unit (TVar 0) t_unit) == t_fun t_unit region_row t_unit);
-  let hl : typing ex_sig [] g_run [] false (ETyLam (KRow EEffect) frame_fn)
+  let hl : typing ex_sig [] g_run [] (ETyLam (KRow EEffect) frame_fn)
              (TForall (KRow EEffect) (t_fun t_unit (TVar 0) t_unit)) TRowEmpty =
     T_TyLam () () () frame_fn_typing
   in
@@ -331,24 +331,24 @@ let row_yx : typ = TRowExt (EntTy key_y t_bool) row_xi
 
 let om_case : octx = scrut_occs 0 [t_variant row_yx]
 
-let inj_y_typing : typing ex_sig [] g0 [] false inj_y (t_variant row_yx) TRowEmpty =
+let inj_y_typing : typing ex_sig [] g0 [] inj_y (t_variant row_yx) TRowEmpty =
   assert_norm (check ex_sig g0 TRowEmpty (KRow EEffect));
   assert_norm (key_ok ex_sig g0 key_y EType /\ entails (hyps g0) (CLacks key_y row_xi));
   assert_norm (check ex_sig g0 row_xi (KRow EType));
-  T_Inject (lit_typing g0 [] false (LBool true) t_bool TRowEmpty) () ()
+  T_Inject (lit_typing g0 [] (LBool true) t_bool TRowEmpty) () ()
 
 (* The branch `x -> inject y [()] false`. *)
 let case_branch
-  : dt_typing ex_sig [] g0 [] true ((OVariant (OScrut 0) key_x, t_int) :: om_case)
+  : dt_typing ex_sig [] g0 [] ((OVariant (OScrut 0) key_x, t_int) :: om_case)
       (DLeaf (EInject key_y TRowEmpty (ELit (LBool false)))) (t_variant row_yb) TRowEmpty =
   assert_norm (check ex_sig g0 TRowEmpty (KRow EEffect));
   assert_norm (key_ok ex_sig g0 key_y EType /\ entails (hyps g0) (CLacks key_y TRowEmpty));
   assert_norm (check ex_sig g0 TRowEmpty (KRow EType));
-  TD_Leaf (T_Inject (lit_typing g0 [] false (LBool false) t_bool TRowEmpty) () ())
+  TD_Leaf (T_Inject (lit_typing g0 [] (LBool false) t_bool TRowEmpty) () ())
 
 (* The default `bind z = s0 in z`, `s0` at the residual. *)
 let case_default
-  : dt_typing ex_sig [] g0 [] true ((OScrut 0, t_variant row_yb) :: om_case)
+  : dt_typing ex_sig [] g0 [] ((OScrut 0, t_variant row_yb) :: om_case)
       (DBind (OScrut 0) (DLeaf (EVar 0))) (t_variant row_yb) TRowEmpty =
   let om' = (OScrut 0, t_variant row_yb) :: om_case in
   let g' = push_var g0 (t_variant row_yb) in
@@ -368,19 +368,19 @@ let case_inj_typing =
   assert_norm (key_split row_yx [(key_x, t_int)] row_yb);
   ty_eq_refl (t_variant row_yx);
   let ho : occ_typing ex_sig g0 om_case (OScrut 0) (t_variant row_yx) = TO_Lookup () in
-  let hbr : key_brs_typing ex_sig [] g0 [] true om_case (OScrut 0) [(key_x, t_int)]
+  let hbr : key_brs_typing ex_sig [] g0 [] om_case (OScrut 0) [(key_x, t_int)]
               [(key_x, DLeaf (EInject key_y TRowEmpty (ELit (LBool false))))] (t_variant row_yb)
               TRowEmpty =
     TKB_Cons () case_branch (TKB_Nil ())
   in
-  let hdt : dt_typing ex_sig [] g0 [] true om_case
+  let hdt : dt_typing ex_sig [] g0 [] om_case
               (DSwitchKey (OScrut 0)
                  [(key_x, DLeaf (EInject key_y TRowEmpty (ELit (LBool false))))]
                  (Some (DBind (OScrut 0) (DLeaf (EVar 0)))))
               (t_variant row_yb) TRowEmpty =
     TD_SwitchKeyDef row_yx row_yb [(key_x, t_int)] ho () () () hbr case_default
   in
-  let hes : exps_typing ex_sig [] g0 [] false TRowEmpty [inj_y] [t_variant row_yx] =
+  let hes : exps_typing ex_sig [] g0 [] TRowEmpty [inj_y] [t_variant row_yx] =
     TE_Cons inj_y_typing (TE_Nil ())
   in
   assert_norm (om_case == scrut_occs 0 [t_variant row_yx]);
@@ -391,15 +391,15 @@ let inj_y_residual_typing =
   assert_norm (V.is_value ex_sig inj_y /\ variant_view inj_y == Some (key_y, ELit (LBool true)));
   assert_norm (check ex_sig g0 (t_variant row_yb) KType /\ check ex_sig g0 t_bool KType /\
                L.mem (key_y, PTy (canon t_bool)) (row_entries (canon row_yb)));
-  T_VariantValue #ex_sig #[] #g0 #[] #false #inj_y #key_y #(ELit (LBool true)) #t_bool #TRowEmpty
-    row_yx row_yb inj_y_typing () (lit_typing g0 [] false (LBool true) t_bool TRowEmpty) ()
+  T_VariantValue #ex_sig #[] #g0 #[] #inj_y #key_y #(ELit (LBool true)) #t_bool #TRowEmpty
+    row_yx row_yb inj_y_typing () (lit_typing g0 [] (LBool true) t_bool TRowEmpty) ()
 
 (* A variant with a dangling region reference: the only rule that
    reads its annotation is `T_Inject`, whose kinding of it fails, since a
    kinded type is locally closed; `T_Conv` and `T_VariantValue` rest on a
    derivation of the same term. *)
-let rec inj_dangling_inv (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing ex_sig [] g d tl e t r)
+let rec inj_dangling_inv (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing ex_sig [] g d e t r)
   : Lemma (requires e == inj_dangling) (ensures False) (decreases h) =
   match h with
   | T_Inject _ _ _ ->
@@ -408,7 +408,7 @@ let rec inj_dangling_inv (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
   | T_Conv h' _ _ -> inj_dangling_inv h'
   | T_VariantValue _ _ h' _ _ _ -> inj_dangling_inv h'
 
-let inj_dangling_untypable #g #d #tl #t #r h = inj_dangling_inv h
+let inj_dangling_untypable #g #d #t #r h = inj_dangling_inv h
 
 (* * `switchKey` under a substitution *)
 
@@ -422,7 +422,7 @@ let push_var_kinding (g: ctx) (t: typ)
 (* `switch_fn c : Variant ( y : Int | c ) -> Int` in a context `g` that
    kinds `( y : Int | c )`. *)
 let switch_fn_typing (g: ctx) (c: typ)
-  : Pure (typing ex_sig [] g [] true (switch_fn c)
+  : Pure (typing ex_sig [] g [] (switch_fn c)
             (t_fun (t_variant (TRowExt (EntTy key_y t_int) c)) TRowEmpty t_int) TRowEmpty)
          (requires check ex_sig g (TRowExt (EntTy key_y t_int) c) (KRow EType) /\
                    check ex_sig g c (KRow EType) /\ check ex_sig g TRowEmpty (KRow EEffect) /\
@@ -433,28 +433,28 @@ let switch_fn_typing (g: ctx) (c: typ)
   let gx = push_var g (t_variant vr) in
   let om = scrut_occs 0 [t_variant vr] in
   push_var_kinding g (t_variant vr);
-  let hx : typing ex_sig [] gx [] false (EVar 0) (t_variant vr) TRowEmpty = T_Var () () in
-  let hes : exps_typing ex_sig [] gx [] false TRowEmpty [EVar 0] [t_variant vr] =
+  let hx : typing ex_sig [] gx [] (EVar 0) (t_variant vr) TRowEmpty = T_Var () () in
+  let hes : exps_typing ex_sig [] gx [] TRowEmpty [EVar 0] [t_variant vr] =
     TE_Cons hx (TE_Nil ())
   in
   let ho : occ_typing ex_sig gx om (OScrut 0) (t_variant vr) = TO_Lookup () in
-  let hbr : key_brs_typing ex_sig [] gx [] true om (OScrut 0) [(key_y, t_int)]
+  let hbr : key_brs_typing ex_sig [] gx [] om (OScrut 0) [(key_y, t_int)]
               [(key_y, DLeaf (lit_int 0l))] t_int TRowEmpty =
-    TKB_Cons () (TD_Leaf (lit_typing gx [] true (LInt 0l) t_int TRowEmpty)) (TKB_Nil ())
+    TKB_Cons () (TD_Leaf (lit_typing gx [] (LInt 0l) t_int TRowEmpty)) (TKB_Nil ())
   in
   let om' = (OScrut 0, t_variant c) :: om in
   let gz = push_var gx (t_variant c) in
   push_var_kinding gx (t_variant c);
   let hoz : occ_typing ex_sig gx om' (OScrut 0) (t_variant c) = TO_Lookup () in
-  let hdf : dt_typing ex_sig [] gx [] true om' (DBind (OScrut 0) (DLeaf (lit_int 1l))) t_int
+  let hdf : dt_typing ex_sig [] gx [] om' (DBind (OScrut 0) (DLeaf (lit_int 1l))) t_int
               TRowEmpty =
-    TD_Bind hoz (TD_Leaf (lit_typing gz [] true (LInt 1l) t_int TRowEmpty))
+    TD_Bind hoz (TD_Leaf (lit_typing gz [] (LInt 1l) t_int TRowEmpty))
   in
   assert_norm (L.noRepeats [key_y]);
   assert_norm (brs_row [(key_y, t_int)] c == vr);
   ty_eq_refl vr;
   ty_eq_refl (t_variant vr);
-  let hdt : dt_typing ex_sig [] gx [] true om
+  let hdt : dt_typing ex_sig [] gx [] om
               (DSwitchKey (OScrut 0) [(key_y, DLeaf (lit_int 0l))]
                  (Some (DBind (OScrut 0) (DLeaf (lit_int 1l)))))
               t_int TRowEmpty =
@@ -486,11 +486,11 @@ let switch_redex_typing =
   assert_norm (check ex_sig g0 TRowEmpty (KRow EEffect));
   assert_norm (kind_wf g0.nk (KRow EType) /\ qkind g0.nk (KRow EType));
   assert_norm (check ex_sig g0 row_yi (KRow EType));
-  let hc : typing ex_sig [] g_r [] true (ECLam (lacks_y (TVar 0)) (switch_fn (TVar 0)))
+  let hc : typing ex_sig [] g_r [] (ECLam (lacks_y (TVar 0)) (switch_fn (TVar 0)))
              (TConstr (lacks_y (TVar 0)) switch_fn_ty) TRowEmpty =
     T_CLam () () () (switch_fn_typing g_ra (TVar 0))
   in
-  let hl : typing ex_sig [] g0 [] false
+  let hl : typing ex_sig [] g0 []
              (ETyLam (KRow EType) (ECLam (lacks_y (TVar 0)) (switch_fn (TVar 0))))
              (TForall (KRow EType) (TConstr (lacks_y (TVar 0)) switch_fn_ty)) TRowEmpty =
     T_TyLam () () () hc

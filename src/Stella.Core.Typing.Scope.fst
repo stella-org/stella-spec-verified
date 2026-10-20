@@ -405,105 +405,144 @@ let scoped_switch_key (g: ctx) (nj: nat) (o: occ) (bs: list (key & dtree)) (df: 
   | None -> ()
   | Some _ -> ()
 
+(* A non-tail subterm is typed under no join point, and its scope under
+   none is a scope under any number. *)
+
+let rec jp_scoped_mono_exps (n m: nat) (es: list exp)
+  : Lemma (requires n <= m /\ V.jp_scoped_exps n es) (ensures V.jp_scoped_exps m es)
+          (decreases es) =
+  match es with
+  | [] -> ()
+  | e :: es' -> V.jp_scoped_mono n m e; jp_scoped_mono_exps n m es'
+
+let scoped_mono (g: ctx) (nj: nat) (e: exp)
+  : Lemma (requires exp_scoped g 0 e) (ensures exp_scoped g nj e) =
+  V.jp_scoped_mono 0 nj e
+
+let scoped_mono_exps (g: ctx) (nj: nat) (es: list exp)
+  : Lemma (requires exps_scoped g 0 es) (ensures exps_scoped g nj es) =
+  jp_scoped_mono_exps 0 nj es
+
 (* The mutual induction. *)
 
-let rec typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r)
+let rec typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r)
   : Lemma (requires layouts_struct g.regions)
           (ensures exp_scoped g (L.length d) e /\ row_scoped g r)
           (decreases h) =
   match h with
-  | T_Var #_ #_ #_ #_ #_ #i _ _ -> nth_lt g.vars i; check_scoped sg g r (KRow EEffect)
+  | T_Var #_ #_ #_ #_ #i _ _ -> nth_lt g.vars i; check_scoped sg g r (KRow EEffect)
   | T_Global _ _ _ -> check_scoped sg g r (KRow EEffect)
   | T_Lit _ -> check_scoped sg g r (KRow EEffect)
-  | T_Lam #_ #_ #_ #_ #_ #t1 #r' _ _ hb ->
+  | T_Lam #_ #_ #_ #_ #t1 #r' _ _ hb ->
     check_scoped sg g t1 KType;
     check_scoped sg g r' (KRow EEffect);
     check_scoped sg g r (KRow EEffect);
     typing_scoped' hb
-  | T_App h1 h2 -> typing_scoped' h1; typing_scoped' h2
-  | T_Chain hc _ -> chain_typing_scoped' hc
-  | T_TyLam #_ #_ #_ #_ #_ #k _ _ _ hb ->
+  | T_App #_ #_ #_ #_ #e1 #e2 h1 h2 ->
+    typing_scoped' h1; typing_scoped' h2;
+    scoped_mono g (L.length d) e1; scoped_mono g (L.length d) e2
+  | T_Chain hc _ -> chain_typing_scoped' hc; scoped_mono g (L.length d) e
+  | T_TyLam #_ #_ #_ #_ #k _ _ _ hb ->
     check_scoped sg g r (KRow EEffect);
     push_tvar_shape g k;
     typing_scoped' hb
-  | T_TyApp #_ #_ #_ #_ #_ #_ #s #k h1 _ -> typing_scoped' h1; check_scoped sg g s k
-  | T_CLam #_ #_ #_ #_ #_ #c _ _ _ hb ->
+  | T_TyApp #_ #_ #_ #_ #e1 #s #k h1 _ ->
+    typing_scoped' h1; check_scoped sg g s k; scoped_mono g (L.length d) e1
+  | T_CLam #_ #_ #_ #_ #c _ _ _ hb ->
     constr_ok_scoped sg g c;
     check_scoped sg g r (KRow EEffect);
     rdom_add_assump g c;
     typing_scoped' hb
-  | T_CApp h1 _ -> typing_scoped' h1
-  | T_Let #_ #_ #_ #_ #_ #t1 _ h1 h2 ->
-    check_scoped sg g t1 KType; typing_scoped' h1; typing_scoped' h2
-  | T_LetRec #_ #_ #_ #_ #_ #bs _ hbs hb ->
+  | T_CApp #_ #_ #_ #_ #e1 h1 _ -> typing_scoped' h1; scoped_mono g (L.length d) e1
+  | T_Let #_ #_ #_ #_ #t1 #e1 _ h1 h2 ->
+    check_scoped sg g t1 KType; typing_scoped' h1; typing_scoped' h2;
+    scoped_mono g (L.length d) e1
+  | T_LetRec #_ #_ #_ #_ #bs _ hbs hb ->
     push_vars_shape g (L.map fst bs);
     binds_typing_scoped' hbs;
     typing_scoped' hb
   | T_Conv h1 _ _ -> typing_scoped' h1; check_scoped sg g r (KRow EEffect)
-  | T_Case #_ #_ #_ #_ #_ #_ #_ #ts hes hdt ->
+  | T_Case #_ #_ #_ #_ #es #_ #ts hes hdt ->
     exps_typing_scoped' hes;
+    scoped_mono_exps g (L.length d) es;
     octx_scoped_scrut g 0 ts;
     dt_typing_scoped' hdt
-  | T_LetJoin #_ #_ #_ #_ #_ #ts #t1 _ h1 h2 ->
+  | T_LetJoin #_ #_ #_ #_ #ts #t1 _ h1 h2 ->
     tys_ok_scoped sg g ts;
     check_scoped sg g t1 KType;
     push_vars_shape g ts;
     typing_scoped' h1;
     typing_scoped' h2
-  | T_Jump #_ #_ #_ #_ #j _ _ hes -> nth_lt d j; exps_typing_scoped' hes
+  | T_Jump #_ #_ #_ #_ #j #es _ _ hes ->
+    nth_lt d j; exps_typing_scoped' hes; scoped_mono_exps g (L.length d) es
   | T_RecEmpty _ -> check_scoped sg g r (KRow EEffect)
-  | T_Extend #_ #_ #_ #_ #_ #k h1 h2 _ ->
-    typing_scoped' h1; typing_scoped' h2; key_ok_scoped sg g k
-  | T_Select #_ #_ #_ #_ #_ #k h1 _ -> typing_scoped' h1; key_ok_scoped sg g k
-  | T_Restrict #_ #_ #_ #_ #_ #k h1 _ -> typing_scoped' h1; key_ok_scoped sg g k
-  | T_Update #_ #_ #_ #_ #_ #k h1 h2 _ ->
-    typing_scoped' h1; typing_scoped' h2; key_ok_scoped sg g k
-  | T_Merge h1 h2 _ -> typing_scoped' h1; typing_scoped' h2
-  | T_Inject #_ #_ #_ #_ #_ #k #r0 h1 _ _ ->
-    typing_scoped' h1; key_ok_scoped sg g k; check_scoped sg g r0 (KRow EType)
-  | T_Weaken #_ #_ #_ #_ #_ #k #t1 h1 _ _ ->
-    typing_scoped' h1; key_ok_scoped sg g k; check_scoped sg g t1 KType
-  | T_VariantValue _ _ h1 _ _ _ -> typing_scoped' h1
-  | T_Absurd h1 _ -> typing_scoped' h1; check_scoped sg g t KType
-  | T_Perform #_ #_ #_ #_ #_ #k #_ #ss #_ #_ #q #ei #os ts _ _ _ h1 ->
+  | T_Extend #_ #_ #_ #_ #k #e1 #e2 h1 h2 _ ->
+    typing_scoped' h1; typing_scoped' h2; key_ok_scoped sg g k;
+    scoped_mono g (L.length d) e1; scoped_mono g (L.length d) e2
+  | T_Select #_ #_ #_ #_ #k #e1 h1 _ ->
+    typing_scoped' h1; key_ok_scoped sg g k; scoped_mono g (L.length d) e1
+  | T_Restrict #_ #_ #_ #_ #k #e1 h1 _ ->
+    typing_scoped' h1; key_ok_scoped sg g k; scoped_mono g (L.length d) e1
+  | T_Update #_ #_ #_ #_ #k #e1 #e2 h1 h2 _ ->
+    typing_scoped' h1; typing_scoped' h2; key_ok_scoped sg g k;
+    scoped_mono g (L.length d) e1; scoped_mono g (L.length d) e2
+  | T_Merge #_ #_ #_ #_ #e1 #e2 h1 h2 _ ->
+    typing_scoped' h1; typing_scoped' h2;
+    scoped_mono g (L.length d) e1; scoped_mono g (L.length d) e2
+  | T_Inject #_ #_ #_ #_ #k #r0 #e1 h1 _ _ ->
+    typing_scoped' h1; key_ok_scoped sg g k; check_scoped sg g r0 (KRow EType);
+    scoped_mono g (L.length d) e1
+  | T_Weaken #_ #_ #_ #_ #k #t1 #e1 h1 _ _ ->
+    typing_scoped' h1; key_ok_scoped sg g k; check_scoped sg g t1 KType;
+    scoped_mono g (L.length d) e1
+  | T_VariantValue _ _ h1 _ _ _ -> typing_scoped' h1; scoped_mono g (L.length d) e
+  | T_Absurd #_ #_ #_ #_ #_ #e1 h1 _ ->
+    typing_scoped' h1; check_scoped sg g t KType; scoped_mono g (L.length d) e1
+  | T_Perform #_ #_ #_ #_ #k #_ #ss #e1 #_ #q #ei #os ts _ _ _ h1 ->
     typing_scoped' h1;
+    scoped_mono g (L.length d) e1;
     row_key_scoped g r k (PEff q (canon_tys ts));
     check_tys_scoped sg g ss os.binders
-  | T_Handle #_ #_ #_ #_ #_ #e1 #hd #b #_ #_ #_ #_ #_ _ _ _ _ h1 h2 hcl ->
+  | T_Handle #_ #_ #_ #_ #e1 #hd #b #_ #_ #_ #_ #_ _ _ _ _ h1 h2 hcl ->
     check_scoped sg g (TRowExt hd.h_ent r) (KRow EEffect);
     check_scoped sg g hd.h_ret_ty KType;
     check_scoped sg g r (KRow EEffect);
     typing_scoped' h1;
     typing_scoped' h2;
     clauses_typing_scoped' hcl
-  | T_OpenEff #_ #_ #_ #_ #_ #r' h1 _ -> typing_scoped' h1; check_scoped sg g r' (KRow EEffect)
-  | T_Region #_ #_ #_ #_ #_ #lay #_ #body _ _ hes hbody ->
+  | T_OpenEff #_ #_ #_ #_ #r' #e1 h1 _ ->
+    typing_scoped' h1; check_scoped sg g r' (KRow EEffect); scoped_mono g (L.length d) e1
+  | T_Region #_ #_ #_ #_ #lay #es #body _ _ hes hbody ->
     layout_scoped sg g lay;
     check_scoped sg g r (KRow EEffect);
     exps_typing_scoped' hes;
+    scoped_mono_exps g (L.length d) es;
     let a = fresh_for g body in
     layouts_struct_enter_region sg g a lay;
     typing_scoped' (hbody a);
     region_body_scoped g lay a body
-  | T_ReadCell #_ #_ #_ #_ #_ #a #k #lay #t1 _ _ _ ->
+  | T_ReadCell #_ #_ #_ #_ #a #k #lay #t1 _ _ _ ->
     assoc_fst a g.regions lay;
     layouts_struct_assoc g.regions a lay;
     layout_key_scoped lay k t1;
     check_scoped sg g r (KRow EEffect)
-  | T_WriteCell #_ #_ #_ #_ #_ #a #k #_ #lay #t1 _ _ h1 ->
+  | T_WriteCell #_ #_ #_ #_ #a #k #e1 #lay #t1 _ _ h1 ->
     assoc_fst a g.regions lay;
     layouts_struct_assoc g.regions a lay;
     layout_key_scoped lay k t1;
-    typing_scoped' h1
-  | T_Match om hes _ hm hdt ->
+    typing_scoped' h1;
+    scoped_mono g (L.length d) e1
+  | T_Match #_ #_ #_ #_ #th om hes _ hm hdt ->
     exps_typing_scoped' hes;
+    scoped_mono_exps g (L.length d) th;
     match_typing_scoped' hm;
     dt_typing_scoped' hdt
-  | T_OpenEffC #_ #_ #_ #_ #_ #r' h1 _ -> typing_scoped' h1; check_scoped sg g r' (KRow EEffect)
+  | T_OpenEffC #_ #_ #_ #_ #r' #e1 h1 _ ->
+    typing_scoped' h1; check_scoped sg g r' (KRow EEffect); scoped_mono g (L.length d) e1
   | T_Force _ _ -> check_scoped sg g r (KRow EEffect)
   | T_Fill _ _ h1 -> typing_scoped' h1; check_scoped sg g r (KRow EEffect)
-  | T_RegionOpen #_ #_ #_ #_ #_ #a #_ #_ #lay _ _ _ hc hb ->
+  | T_RegionOpen #_ #_ #_ #_ #a #_ #_ #lay _ _ _ hc hb ->
     assoc_fst a g.regions lay;
     layouts_struct_assoc g.regions a lay;
     check_closed_lc sg g.regions r (KRow EEffect);
@@ -511,8 +550,8 @@ let rec typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (
     typing_scoped' hb
   | T_Opaque _ _ -> check_scoped sg g t KType; check_scoped sg g r (KRow EEffect)
 
-and exps_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts)
+and exps_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts)
   : Lemma (requires layouts_struct g.regions)
           (ensures exps_scoped g (L.length d) es /\ row_scoped g r)
           (decreases h) =
@@ -560,62 +599,64 @@ and match_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (
     proj_scoped sg g th o v;
     match_typing_scoped' h2
 
-and dt_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
-  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d tl om dt t r)
+and dt_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r)
   : Lemma (requires layouts_struct g.regions /\ octx_scoped g om)
           (ensures dt_scoped g (L.length d) dt /\ row_scoped g r) (decreases h) =
   match h with
   | TD_Leaf h1 -> typing_scoped' h1
-  | TD_Bind #_ #_ #_ #_ #_ #_ #_ #_ #t_o ho hdt ->
+  | TD_Bind #_ #_ #_ #_ #_ #_ #_ #t_o ho hdt ->
     occ_typing_scoped ho;
     octx_scoped_rdom g (push_var g t_o) om;
     dt_typing_scoped' hdt
-  | TD_SwitchCtor #_ #_ #_ #_ #_ #_ #o #bs _ _ _ _ ho _ _ _ hbr ->
+  | TD_SwitchCtor #_ #_ #_ #_ #_ #o #bs _ _ _ _ ho _ _ _ hbr ->
     occ_typing_scoped ho; ctor_brs_typing_scoped' hbr;
     scoped_switch_ctor g (L.length d) o bs None
-  | TD_SwitchCtorDef #_ #_ #_ #_ #_ #_ #o #bs #df _ _ _ _ ho _ _ _ hbr hdf ->
+  | TD_SwitchCtorDef #_ #_ #_ #_ #_ #o #bs #df _ _ _ _ ho _ _ _ hbr hdf ->
     occ_typing_scoped ho; ctor_brs_typing_scoped' hbr; dt_typing_scoped' hdf;
     scoped_switch_ctor g (L.length d) o bs (Some df)
-  | TD_SwitchLit #_ #_ #_ #_ #_ #_ #o #bs #df _ ho _ _ hbr hdf ->
+  | TD_SwitchLit #_ #_ #_ #_ #_ #o #bs #df _ ho _ _ hbr hdf ->
     occ_typing_scoped ho; lit_brs_typing_scoped' hbr; dt_typing_scoped' hdf;
     scoped_switch_lit g (L.length d) o bs df
-  | TD_SwitchKey #_ #_ #_ #_ #_ #_ #o #bs vr kts ho _ _ _ hbr ->
+  | TD_SwitchKey #_ #_ #_ #_ #_ #o #bs vr kts ho _ _ _ hbr ->
     occ_typing_scoped ho;
     split_keys_scoped sg g vr kts TRowEmpty kts;
     key_brs_typing_scoped' hbr;
     scoped_switch_key g (L.length d) o bs None
-  | TD_SwitchKeyDef #_ #_ #_ #_ #_ #_ #o #bs #df vr vr' kts ho _ _ _ hbr hdf ->
+  | TD_SwitchKeyDef #_ #_ #_ #_ #_ #o #bs #df vr vr' kts ho _ _ _ hbr hdf ->
     occ_typing_scoped ho;
     split_keys_scoped sg g vr kts vr' kts;
     key_brs_typing_scoped' hbr;
     dt_typing_scoped' hdf;
     scoped_switch_key g (L.length d) o bs (Some df)
-  | TD_Guard h1 h2 h3 -> typing_scoped' h1; dt_typing_scoped' h2; dt_typing_scoped' h3
+  | TD_Guard #_ #_ #_ #_ #_ #e1 h1 h2 h3 ->
+    typing_scoped' h1; dt_typing_scoped' h2; dt_typing_scoped' h3;
+    scoped_mono g (L.length d) e1
 
-and ctor_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+and ctor_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree))
-  (#t #r: typ) (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r)
+  (#t #r: typ) (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r)
   : Lemma (requires layouts_struct g.regions /\ octx_scoped g om /\ occ_scoped g o)
           (ensures brs_scoped g (L.length d) bs /\ row_scoped g r) (decreases h) =
   match h with
   | TCB_Nil _ -> check_scoped sg g r (KRow EEffect)
-  | TCB_Cons #_ #_ #_ #_ #_ #_ #_ #_ #_ #_ #c #_ #_ #_ #_ #fs _ hdt h2 ->
+  | TCB_Cons #_ #_ #_ #_ #_ #_ #_ #_ #_ #c #_ #_ #_ #_ #fs _ hdt h2 ->
     octx_scoped_fields g o c 0 fs;
     octx_scoped_append g (field_occs o c 0 fs) om;
     dt_typing_scoped' hdt;
     ctor_brs_typing_scoped' h2
 
-and lit_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
-  (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ) (h: lit_brs_typing sg ln g d tl om lt bs t r)
+and lit_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ) (h: lit_brs_typing sg ln g d om lt bs t r)
   : Lemma (requires layouts_struct g.regions /\ octx_scoped g om)
           (ensures brs_scoped g (L.length d) bs /\ row_scoped g r) (decreases h) =
   match h with
   | TLB_Nil _ -> check_scoped sg g r (KRow EEffect)
   | TLB_Cons _ hdt h2 -> dt_typing_scoped' hdt; lit_brs_typing_scoped' h2
 
-and key_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+and key_brs_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
   : Lemma (requires layouts_struct g.regions /\ octx_scoped g om /\ occ_scoped g o /\
                     keys_scoped g (L.map fst kts))
           (ensures kbrs_scoped g (L.length d) bs /\ row_scoped g r) (decreases h) =
@@ -642,11 +683,11 @@ and clauses_typing_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (
     typing_scoped' hb;
     clauses_typing_scoped' h2
 
-let typing_scoped #sg #ln #g #d #tl #e #t #r h =
+let typing_scoped #sg #ln #g #d #e #t #r h =
   wf_ctx_layouts_struct sg g;
   typing_scoped' h
 
-let exps_typing_scoped #sg #ln #g #d #tl #r #es #ts h =
+let exps_typing_scoped #sg #ln #g #d #r #es #ts h =
   wf_ctx_layouts_struct sg g;
   exps_typing_scoped' h
 
@@ -666,19 +707,19 @@ let match_typing_scoped #sg #ln #g #d #r #th #om h =
   wf_ctx_layouts_struct sg g;
   match_typing_scoped' h
 
-let dt_typing_scoped #sg #ln #g #d #tl #om #dt #t #r h =
+let dt_typing_scoped #sg #ln #g #d #om #dt #t #r h =
   wf_ctx_layouts_struct sg g;
   dt_typing_scoped' h
 
-let ctor_brs_typing_scoped #sg #ln #g #d #tl #om #o #ks #ss #cs #bs #t #r h =
+let ctor_brs_typing_scoped #sg #ln #g #d #om #o #ks #ss #cs #bs #t #r h =
   wf_ctx_layouts_struct sg g;
   ctor_brs_typing_scoped' h
 
-let lit_brs_typing_scoped #sg #ln #g #d #tl #om #lt #bs #t #r h =
+let lit_brs_typing_scoped #sg #ln #g #d #om #lt #bs #t #r h =
   wf_ctx_layouts_struct sg g;
   lit_brs_typing_scoped' h
 
-let key_brs_typing_scoped #sg #ln #g #d #tl #om #o #kts #bs #t #r h =
+let key_brs_typing_scoped #sg #ln #g #d #om #o #kts #bs #t #r h =
   wf_ctx_layouts_struct sg g;
   key_brs_typing_scoped' h
 
@@ -686,19 +727,19 @@ let clauses_typing_scoped #sg #ln #g #ei #ts #r #b #cs h =
   wf_ctx_layouts_struct sg g;
   clauses_typing_scoped' h
 
-let typing_jps_below #sg #ln #g #d #tl #e #t #r h =
+let typing_jps_below #sg #ln #g #d #e #t #r h =
   wf_ctx_layouts_struct sg g;
   typing_scoped' h;
   jp_scoped_jps_below (L.length d) (L.length d) e
 
-let typing_value_ren_jp' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp)
-  (#t #r: typ) (h: typing sg ln g d tl v t r) (xi: ren)
+let typing_value_ren_jp' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
+  (#t #r: typ) (h: typing sg ln g d v t r) (xi: ren)
   : Lemma (requires layouts_struct g.regions /\ V.is_value sg v)
           (ensures V.jp_scoped 0 v /\ ren_jp xi v == v) =
   typing_scoped' h;
   V.value_jp_scoped sg (L.length d) v;
   V.value_ren_jp sg 0 xi v
 
-let typing_value_ren_jp #sg #ln #g #d #tl #v #t #r h xi =
+let typing_value_ren_jp #sg #ln #g #d #v #t #r h xi =
   wf_ctx_layouts_struct sg g;
   typing_value_ren_jp' h xi

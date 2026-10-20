@@ -2,10 +2,10 @@
  * The typing relation of the Core (spec 05; spec 06 §Run-time forms,
  * §Opaque values).
  *
- *     typing sg ln g d tl e t r            Γ; Δ ⊢ e : τ ! ρ
- *     chain_typing sg ln g d r e           the arguments of the chain e, at ρ
- *     dt_typing sg ln g d tl om dt t r     Γ; Δ; Ω ⊢ dt : τ ! ρ
- *     occ_typing sg g om o t               Ω ⊢ o : τ
+ *     typing sg ln g d e t r           Γ; Δ ⊢ e : τ ! ρ
+ *     chain_typing sg ln g d r e       the arguments of the chain e, at ρ
+ *     dt_typing sg ln g d om dt t r    Γ; Δ; Ω ⊢ dt : τ ! ρ
+ *     occ_typing sg g om o t           Ω ⊢ o : τ
  *
  * `sg` is `Σ`, `ln` is `Γ_N` (design §4.5), `g` is `Γ` (design §4.2), `d` is
  * `Δ` and `om` is `Ω` (`Stella.Core.Typing.Aux`). `r` is the ambient effect
@@ -13,39 +13,42 @@
  * `Stella.Core.Kinding`, `Stella.Core.Entail` and `Stella.Core.Rows`; every
  * premise on them is a `squash`.
  *
- * ## Tail position
+ * ## Join points
  *
- * `tl` says whether `e` stands in tail position, the positions
- * `Tl ::= [] | letjoin j (x̄ : τ̄) : τ = e' in Tl` of spec 06 §Evaluation
- * contexts, within the current function activation. `jump` requires it.
+ * `Δ` holds exactly the join points that a `jump` may target from where it
+ * stands (design §4.3; spec 04 §Join points). `jump j (ē)` reads the
+ * parameter types, the result type and the row of `j` from `Δ`, and asks
+ * nothing of its position. `Δ` is relative: the `Δ` of a position depends
+ * only on the forms between it and the nearest non-tail position or
+ * boundary above it.
  *
- *   - A child that is no tail of its parent is typed with `tl = false` and
- *     the parent's `Δ`: both sides of an application, the arguments of an
- *     application chain, the bound side of `let`, the scrutinees of `case`
- *     and `match`, the condition of `guard`, the arguments of `jump`, every
- *     subterm of a record or variant operation, the argument of `perform`,
- *     the value of `writeCell`, the initial values of `region`, the operands
- *     of `openEff`, `openEffC`, `[σ]` and `[•]`.
- *   - The continuation of `letjoin`, the body of `let` and of `letrec`, and
- *     the leaves of a decision tree inherit `tl`. The definition of a join
- *     point is in tail position wherever its `letjoin` stands.
- *   - The bodies that discard `Δ` (design §4.3; spec 04 §Join points) are
- *     typed with `Δ = []` and `tl = true`: the bodies of `λ`, `Λ` and
- *     constraint `Λ`, the handled computation, the return clause and the
- *     operation clauses of `handle`, the body of `region` and of
- *     `region⟨ℓ⟩`, and the cells of `region⟨ℓ⟩`.
- *   - The initializers of `letrec`, and the operand of `fill`, which is an
- *     initializer running, also discard `Δ` but stand out of tail position
- *     (spec 05 §Basic rules): they are typed with `Δ = []` and
- *     `tl = false`.
+ *   - A non-tail position starts afresh, with `Δ = []`: both sides of an
+ *     application, the value arguments of a chain, the bound side of
+ *     `let`, the scrutinees of `case`, the values `θ` of `match`, the
+ *     condition of `guard`, the arguments of `jump`, every subterm of a
+ *     record or variant operation, the base and the payload of a variant
+ *     value (`T_VariantValue`), the argument of `perform`, the value of
+ *     `writeCell`, the initial values of `region`, and the operands of
+ *     `[τ]`, `[•]` and `openEff`.
+ *   - `letjoin j (x̄ : τ̄) : τ = e1 in e2` adds `j` to the `Δ` it is given,
+ *     for its definition `e1`, under the parameters, and for its
+ *     continuation `e2`.
+ *   - The tail-transparent positions inherit `Δ`: the body of `let` and of
+ *     `letrec`, the continuation of `letjoin`, the tree of `case` and of
+ *     `match`, and the branches and leaves of a decision tree.
+ *   - The boundaries also start with `Δ = []`: the bodies of `λ`, `Λ` and
+ *     constraint `Λ`, the handled computation and every clause of
+ *     `handle`, the body of `region` and of `region⟨ℓ⟩`, the cells of
+ *     `region⟨ℓ⟩`, the initializers of `letrec`, the operand of `fill`,
+ *     and the operand of `openEffC`, which no tail context
+ *     `Tl ::= [] | letjoin j (x̄ : τ̄) : τ = e' in Tl` of spec 06
+ *     §Evaluation contexts passes through.
  *
- * The flag over-approximates `Tl`. The definition of a `letjoin` that
- * stands out of tail position is typed with `tl = true` and the enclosing
- * `Δ`, so a `jump` in it may target an outer join point, although no `Tl`
- * of spec 06 surrounds it. Such a definition is never entered: its
- * continuation stands out of tail position too, so no `jump` to it is
- * typed. That every `jump` reduced targets a join point in scope rests on
- * `Stella.Core.Value.jp_scoped` and on Progress.
+ * A `jump` to `j` therefore stands in a `Tl` under the `letjoin` of `j`
+ * once the tail-transparent forms between them have reduced, wherever that
+ * `letjoin` stands. `exps_typing`, `chain_typing` and `match_typing`
+ * take `Δ` as an index and type their terms under it; the rules use them
+ * at `Δ = []`.
  *
  * ## Leaves, conversion, and kinding premises
  *
@@ -78,8 +81,8 @@
  *   - `[τ]` meets `forall (a : κ)` and has kind `κ`;
  *   - `[•]` meets `C =>` and `θ(C)` is entailed;
  *   - a value argument meets a declared arrow `τ1 -{ρ'}-> τ2` and has type
- *     `θ(τ1)` at the ambient row of the whole chain, under its `Δ`, out of
- *     tail position.
+ *     `θ(τ1)` at the ambient row of the whole chain, under the `Δ` of the
+ *     chain judgement, which `T_Chain` sets to `[]`.
  *
  * The arrow's row `ρ'` is not read: the arrows of a constructor's or a
  * foreign's declared type are pure (`Stella.Core.Sig.Wf.globals_ok`), so
@@ -178,215 +181,214 @@ noeq type occ_typing (sg: sig) : ctx -> octx -> occ -> typ -> Type =
 
 (** * Term typing *)
 
-noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> exp -> typ -> typ -> Type =
+noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> exp -> typ -> typ -> Type =
 
   (* -- Basic rules (spec 05 §Basic rules) -- *)
 
   (** `(x : τ) ∈ Γ` *)
   | T_Var :
-      #g:ctx -> #d:jctx -> #tl:bool -> #i:nat -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #i:nat -> #t:typ -> #r:typ ->
       squash (L.nth g.vars i == Some t) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (EVar i) t r
+      typing sg ln g d (EVar i) t r
 
   (** `M.x [[κ̄']] : σ[k̄ := κ̄']`, `M.x` a constructor, a foreign or a
       top-level value. A constructor or a foreign is also the head of a
       chain (`T_Chain`). *)
   | T_Global :
-      #g:ctx -> #d:jctx -> #tl:bool -> #q:qname -> #ks:list kind -> #nk:nat -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #q:qname -> #ks:list kind -> #nk:nat -> #t:typ -> #r:typ ->
       squash (global_type sg q == Some (nk, t)) ->
       squash (L.length ks == nk /\ qkinds_wf g.nk ks) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (EGlobal q ks) (kinst_ty ks t) r
+      typing sg ln g d (EGlobal q ks) (kinst_ty ks t) r
 
   | T_Lit :
-      #g:ctx -> #d:jctx -> #tl:bool -> #c:lit -> #r:typ ->
+      #g:ctx -> #d:jctx -> #c:lit -> #r:typ ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (ELit c) (lit_type c) r
+      typing sg ln g d (ELit c) (lit_type c) r
 
   (** `λ (x : τ1) / ρ' . e : τ1 -{ρ'}-> τ2`: the body stands at the row the
       λ writes, under no join point. *)
   | T_Lam :
-      #g:ctx -> #d:jctx -> #tl:bool -> #t1:typ -> #r':typ -> #body:exp -> #t2:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #t1:typ -> #r':typ -> #body:exp -> #t2:typ -> #r:typ ->
       squash (check sg g t1 KType /\ check sg g r' (KRow EEffect)) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln (push_var g t1) [] true body t2 r' ->
-      typing sg ln g d tl (ELam t1 r' body) (t_fun t1 r' t2) r
+      typing sg ln (push_var g t1) [] body t2 r' ->
+      typing sg ln g d (ELam t1 r' body) (t_fun t1 r' t2) r
 
   (** The arrow's row is the ambient row. *)
   | T_App :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e1:exp -> #e2:exp -> #t1:typ -> #t2:typ -> #r:typ ->
-      typing sg ln g d false e1 (t_fun t1 r t2) r ->
-      typing sg ln g d false e2 t1 r ->
-      typing sg ln g d tl (EApp e1 e2) t2 r
+      #g:ctx -> #d:jctx -> #e1:exp -> #e2:exp -> #t1:typ -> #t2:typ -> #r:typ ->
+      typing sg ln g [] e1 (t_fun t1 r t2) r ->
+      typing sg ln g [] e2 t1 r ->
+      typing sg ln g d (EApp e1 e2) t2 r
 
   (** A chain headed by a constructor or a foreign, at its cursor
       `⟨ σ ; θ ⟩`: `M.g [[κ̄]] ᾱ : θ(σ) ! ρ` (spec 05 §Typing a chain). *)
   | T_Chain :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #t:typ -> #th:tsub -> #r:typ ->
-      chain_typing sg ln g d r e ->
+      #g:ctx -> #d:jctx -> #e:exp -> #t:typ -> #th:tsub -> #r:typ ->
+      chain_typing sg ln g [] r e ->
       squash (chain_cursor sg e == Some (t, th)) ->
-      typing sg ln g d tl e (sub_ty th t) r
+      typing sg ln g d e (sub_ty th t) r
 
   (** `Λ (a : κ). v`, `v` a value form typed at `()`. *)
   | T_TyLam :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:kind -> #body:exp -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #k:kind -> #body:exp -> #t:typ -> #r:typ ->
       squash (kind_wf g.nk k /\ qkind g.nk k) ->
       squash (value_form sg body) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln (push_tvar g k) [] true body t TRowEmpty ->
-      typing sg ln g d tl (ETyLam k body) (TForall k t) r
+      typing sg ln (push_tvar g k) [] body t TRowEmpty ->
+      typing sg ln g d (ETyLam k body) (TForall k t) r
 
   | T_TyApp :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #s:typ -> #k:kind -> #t:typ -> #r:typ ->
-      typing sg ln g d false e (TForall k t) r ->
+      #g:ctx -> #d:jctx -> #e:exp -> #s:typ -> #k:kind -> #t:typ -> #r:typ ->
+      typing sg ln g [] e (TForall k t) r ->
       squash (check sg g s k) ->
-      typing sg ln g d tl (ETyApp e s) (subst1_ty s t) r
+      typing sg ln g d (ETyApp e s) (subst1_ty s t) r
 
   (** `Λ (_ : C). v`. `C` is well formed and need not be satisfiable
       (design §2.2). *)
   | T_CLam :
-      #g:ctx -> #d:jctx -> #tl:bool -> #c:constr -> #body:exp -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #c:constr -> #body:exp -> #t:typ -> #r:typ ->
       squash (constr_ok sg g c) ->
       squash (value_form sg body) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln (add_assump g c) [] true body t TRowEmpty ->
-      typing sg ln g d tl (ECLam c body) (TConstr c t) r
+      typing sg ln (add_assump g c) [] body t TRowEmpty ->
+      typing sg ln g d (ECLam c body) (TConstr c t) r
 
   (** `e [•]` discharges `C` by entailment. *)
   | T_CApp :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #c:constr -> #t:typ -> #r:typ ->
-      typing sg ln g d false e (TConstr c t) r ->
+      #g:ctx -> #d:jctx -> #e:exp -> #c:constr -> #t:typ -> #r:typ ->
+      typing sg ln g [] e (TConstr c t) r ->
       squash (entails (hyps g) c) ->
-      typing sg ln g d tl (ECApp e) t r
+      typing sg ln g d (ECApp e) t r
 
   | T_Let :
-      #g:ctx -> #d:jctx -> #tl:bool -> #t1:typ -> #e1:exp -> #e2:exp -> #t2:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #t1:typ -> #e1:exp -> #e2:exp -> #t2:typ -> #r:typ ->
       squash (check sg g t1 KType) ->
-      typing sg ln g d false e1 t1 r ->
-      typing sg ln (push_var g t1) d tl e2 t2 r ->
-      typing sg ln g d tl (ELet t1 e1 e2) t2 r
+      typing sg ln g [] e1 t1 r ->
+      typing sg ln (push_var g t1) d e2 t2 r ->
+      typing sg ln g d (ELet t1 e1 e2) t2 r
 
   (** `letrec { x̄ : σ̄ = ē } in e`: the members are a telescope in every
       initializer and in the body, each initializer stands at `()` under no
-      join point and out of tail position, and the group is
-      initialization-safe (spec 10). *)
+      join point, and the group is initialization-safe (spec 10). *)
   | T_LetRec :
-      #g:ctx -> #d:jctx -> #tl:bool -> #bs:list (typ & exp) -> #body:exp -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #bs:list (typ & exp) -> #body:exp -> #t:typ -> #r:typ ->
       squash (I.init_safe_letrec sg bs) ->
       binds_typing sg ln (push_vars g (L.map fst bs)) bs ->
-      typing sg ln (push_vars g (L.map fst bs)) d tl body t r ->
-      typing sg ln g d tl (ELetRec bs body) t r
+      typing sg ln (push_vars g (L.map fst bs)) d body t r ->
+      typing sg ln g d (ELetRec bs body) t r
 
   | T_Conv :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #t1:typ -> #r1:typ -> #t2:typ -> #r2:typ ->
-      typing sg ln g d tl e t1 r1 ->
+      #g:ctx -> #d:jctx -> #e:exp -> #t1:typ -> #r1:typ -> #t2:typ -> #r2:typ ->
+      typing sg ln g d e t1 r1 ->
       squash (ty_eq t1 t2 /\ ty_eq r1 r2) ->
       squash (check sg g t2 KType /\ check sg g r2 (KRow EEffect)) ->
-      typing sg ln g d tl e t2 r2
+      typing sg ln g d e t2 r2
 
   (* -- Join points and decision trees (spec 05 §Join points and decision trees) -- *)
 
   | T_Case :
-      #g:ctx -> #d:jctx -> #tl:bool -> #es:list exp -> #dt:dtree -> #ts:list typ -> #t:typ -> #r:typ ->
-      exps_typing sg ln g d false r es ts ->
-      dt_typing sg ln g d tl (scrut_occs 0 ts) dt t r ->
-      typing sg ln g d tl (ECase es dt) t r
+      #g:ctx -> #d:jctx -> #es:list exp -> #dt:dtree -> #ts:list typ -> #t:typ -> #r:typ ->
+      exps_typing sg ln g [] r es ts ->
+      dt_typing sg ln g d (scrut_occs 0 ts) dt t r ->
+      typing sg ln g d (ECase es dt) t r
 
-  (** The definition is typed under its parameters with the join point in
-      scope, in tail position; the continuation inherits `tl`. *)
+  (** The definition, under its parameters, and the continuation are typed
+      with the join point added to `Δ`. *)
   | T_LetJoin :
-      #g:ctx -> #d:jctx -> #tl:bool -> #ts:list typ -> #t:typ -> #e1:exp -> #e2:exp -> #r:typ ->
+      #g:ctx -> #d:jctx -> #ts:list typ -> #t:typ -> #e1:exp -> #e2:exp -> #r:typ ->
       squash (tys_ok sg g ts /\ check sg g t KType) ->
-      typing sg ln (push_vars g ts) ((ts, t, r) :: d) true e1 t r ->
-      typing sg ln g ((ts, t, r) :: d) tl e2 t r ->
-      typing sg ln g d tl (ELetJoin ts t e1 e2) t r
+      typing sg ln (push_vars g ts) ((ts, t, r) :: d) e1 t r ->
+      typing sg ln g ((ts, t, r) :: d) e2 t r ->
+      typing sg ln g d (ELetJoin ts t e1 e2) t r
 
-  (** `jump` stands in tail position, at the result type and the row of its
-      join point. *)
+  (** `jump` targets a join point of `Δ`, at its result type and its row;
+      its arguments are typed with `Δ = []`. *)
   | T_Jump :
       #g:ctx -> #d:jctx -> #j:nat -> #es:list exp -> #ts:list typ -> #t:typ -> #r:typ ->
       squash (L.nth d j == Some (ts, t, r)) ->
       squash (check sg g t KType /\ check sg g r (KRow EEffect)) ->
-      exps_typing sg ln g d false r es ts ->
-      typing sg ln g d true (EJump j es) t r
+      exps_typing sg ln g [] r es ts ->
+      typing sg ln g d (EJump j es) t r
 
   (* -- Records and variants (spec 05 §Records and variants) -- *)
 
   | T_RecEmpty :
-      #g:ctx -> #d:jctx -> #tl:bool -> #r:typ ->
+      #g:ctx -> #d:jctx -> #r:typ ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl ERecEmpty (t_record TRowEmpty) r
+      typing sg ln g d ERecEmpty (t_record TRowEmpty) r
 
   | T_Extend :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #e1:exp -> #e2:exp -> #t:typ -> #r0:typ -> #r:typ ->
-      typing sg ln g d false e1 t r ->
-      typing sg ln g d false e2 (t_record r0) r ->
+      #g:ctx -> #d:jctx -> #k:key -> #e1:exp -> #e2:exp -> #t:typ -> #r0:typ -> #r:typ ->
+      typing sg ln g [] e1 t r ->
+      typing sg ln g [] e2 (t_record r0) r ->
       squash (key_ok sg g k EType /\ entails (hyps g) (CLacks k r0)) ->
-      typing sg ln g d tl (EExtend k e1 e2) (t_record (TRowExt (EntTy k t) r0)) r
+      typing sg ln g d (EExtend k e1 e2) (t_record (TRowExt (EntTy k t) r0)) r
 
   | T_Select :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #e:exp -> #t:typ -> #r0:typ -> #r:typ ->
-      typing sg ln g d false e (t_record (TRowExt (EntTy k t) r0)) r ->
+      #g:ctx -> #d:jctx -> #k:key -> #e:exp -> #t:typ -> #r0:typ -> #r:typ ->
+      typing sg ln g [] e (t_record (TRowExt (EntTy k t) r0)) r ->
       squash (key_ok sg g k EType) ->
-      typing sg ln g d tl (ESelect k e) t r
+      typing sg ln g d (ESelect k e) t r
 
   | T_Restrict :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #e:exp -> #t:typ -> #r0:typ -> #r:typ ->
-      typing sg ln g d false e (t_record (TRowExt (EntTy k t) r0)) r ->
+      #g:ctx -> #d:jctx -> #k:key -> #e:exp -> #t:typ -> #r0:typ -> #r:typ ->
+      typing sg ln g [] e (t_record (TRowExt (EntTy k t) r0)) r ->
       squash (key_ok sg g k EType) ->
-      typing sg ln g d tl (ERestrict k e) (t_record r0) r
+      typing sg ln g d (ERestrict k e) (t_record r0) r
 
   (** The type at `k` may change. *)
   | T_Update :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #e1:exp -> #e2:exp -> #t:typ -> #t':typ ->
+      #g:ctx -> #d:jctx -> #k:key -> #e1:exp -> #e2:exp -> #t:typ -> #t':typ ->
       #r0:typ -> #r:typ ->
-      typing sg ln g d false e1 (t_record (TRowExt (EntTy k t) r0)) r ->
-      typing sg ln g d false e2 t' r ->
+      typing sg ln g [] e1 (t_record (TRowExt (EntTy k t) r0)) r ->
+      typing sg ln g [] e2 t' r ->
       squash (key_ok sg g k EType) ->
-      typing sg ln g d tl (EUpdate k e1 e2) (t_record (TRowExt (EntTy k t') r0)) r
+      typing sg ln g d (EUpdate k e1 e2) (t_record (TRowExt (EntTy k t') r0)) r
 
   | T_Merge :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e1:exp -> #e2:exp -> #r1:typ -> #r2:typ -> #r:typ ->
-      typing sg ln g d false e1 (t_record r1) r ->
-      typing sg ln g d false e2 (t_record r2) r ->
+      #g:ctx -> #d:jctx -> #e1:exp -> #e2:exp -> #r1:typ -> #r2:typ -> #r:typ ->
+      typing sg ln g [] e1 (t_record r1) r ->
+      typing sg ln g [] e2 (t_record r2) r ->
       squash (entails (hyps g) (CDisj r1 r2)) ->
-      typing sg ln g d tl (EMerge e1 e2) (t_record (TRowUnion r1 r2)) r
+      typing sg ln g d (EMerge e1 e2) (t_record (TRowUnion r1 r2)) r
 
   (** `inject k [r0] e` writes the rest `r0` of its variant. *)
   | T_Inject :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #r0:typ -> #e:exp -> #t:typ -> #r:typ ->
-      typing sg ln g d false e t r ->
+      #g:ctx -> #d:jctx -> #k:key -> #r0:typ -> #e:exp -> #t:typ -> #r:typ ->
+      typing sg ln g [] e t r ->
       squash (key_ok sg g k EType /\ entails (hyps g) (CLacks k r0)) ->
       squash (check sg g r0 (KRow EType)) ->
-      typing sg ln g d tl (EInject k r0 e) (t_variant (TRowExt (EntTy k t) r0)) r
+      typing sg ln g d (EInject k r0 e) (t_variant (TRowExt (EntTy k t) r0)) r
 
   | T_Weaken :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #t:typ -> #e:exp -> #r0:typ -> #r:typ ->
-      typing sg ln g d false e (t_variant r0) r ->
+      #g:ctx -> #d:jctx -> #k:key -> #t:typ -> #e:exp -> #r0:typ -> #r:typ ->
+      typing sg ln g [] e (t_variant r0) r ->
       squash (key_ok sg g k EType /\ entails (hyps g) (CLacks k r0)) ->
       squash (check sg g t KType) ->
-      typing sg ln g d tl (EWeaken k t e) (t_variant (TRowExt (EntTy k t) r0)) r
+      typing sg ln g d (EWeaken k t e) (t_variant (TRowExt (EntTy k t) r0)) r
 
   (** A variant value `inject k [ρ0] v`, under any `weaken`s, that has a
       variant type `Variant vr0` has every kinded variant type with the
       entry `k : τ` of its payload `v : τ`. The derivation at `vr0` checks
       the annotations, which the view does not show. *)
   | T_VariantValue :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #k:key -> #v:exp -> #pt:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #e:exp -> #k:key -> #v:exp -> #pt:typ -> #r:typ ->
       vr0:typ -> vr:typ ->
-      typing sg ln g d false e (t_variant vr0) r ->
+      typing sg ln g [] e (t_variant vr0) r ->
       squash (V.is_value sg e /\ variant_view e == Some (k, v)) ->
-      typing sg ln g d false v pt r ->
+      typing sg ln g [] v pt r ->
       squash (check sg g (t_variant vr) KType /\ check sg g pt KType /\
               L.mem (k, PTy (canon pt)) (row_entries (canon vr))) ->
-      typing sg ln g d tl e (t_variant vr) r
+      typing sg ln g d e (t_variant vr) r
 
   | T_Absurd :
-      #g:ctx -> #d:jctx -> #tl:bool -> #t:typ -> #e:exp -> #r:typ ->
-      typing sg ln g d false e (t_variant TRowEmpty) r ->
+      #g:ctx -> #d:jctx -> #t:typ -> #e:exp -> #r:typ ->
+      typing sg ln g [] e (t_variant TRowEmpty) r ->
       squash (check sg g t KType) ->
-      typing sg ln g d tl (EAbsurd t e) t r
+      typing sg ln g d (EAbsurd t e) t r
 
   (* -- Effects (spec 05 §Effects) -- *)
 
@@ -395,36 +397,36 @@ noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> exp -> typ -> typ
       operation is looked up in `E`, its binders instantiated at `σ̄` and
       `E`'s parameters at `τ̄`. *)
   | T_Perform :
-      #g:ctx -> #d:jctx -> #tl:bool -> #k:key -> #op:opname -> #ss:list typ -> #e:exp -> #r:typ ->
+      #g:ctx -> #d:jctx -> #k:key -> #op:opname -> #ss:list typ -> #e:exp -> #r:typ ->
       #q:qname -> #ei:effect_info -> #os:op_sig ->
       ts:list typ ->
       squash (L.mem (k, PEff q (canon_tys ts)) (row_entries (canon r))) ->
       squash (sg.effects q == Some ei /\ op_of ei op == Some os) ->
       squash (check_tys sg g ts ei.eff_params /\ check_tys sg g ss os.binders) ->
-      typing sg ln g d false e (op_inst ts ss os.arg) r ->
-      typing sg ln g d tl (EPerform k op ss e) (op_inst ts ss os.res) r
+      typing sg ln g [] e (op_inst ts ss os.arg) r ->
+      typing sg ln g d (EPerform k op ss e) (op_inst ts ss os.res) r
 
   (** `handle e with h : β ! ρ`. `h` writes the element `E τ̄` (or
       `s : E τ̄`) it removes; the handled computation stands at the row with
       that element, the return clause and the operation clauses at `ρ`, all
       under no join point. The clauses cover `E`'s operations once each. *)
   | T_Handle :
-      #g:ctx -> #d:jctx -> #tl:bool -> #e:exp -> #h:handler -> #b:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #e:exp -> #h:handler -> #b:typ -> #r:typ ->
       #lbl:option string -> #q:qname -> #ts:list typ -> #ei:effect_info ->
       squash (h.h_ent == EntEff lbl q ts /\ sg.effects q == Some ei) ->
       squash (check sg g (TRowExt h.h_ent r) (KRow EEffect) /\ check sg g h.h_ret_ty KType) ->
       squash (check sg g b KType /\ check sg g r (KRow EEffect)) ->
       squash (clauses_cover ei h.h_clauses) ->
-      typing sg ln g [] true e h.h_ret_ty (TRowExt h.h_ent r) ->
-      typing sg ln (push_var g h.h_ret_ty) [] true h.h_ret b r ->
+      typing sg ln g [] e h.h_ret_ty (TRowExt h.h_ent r) ->
+      typing sg ln (push_var g h.h_ret_ty) [] h.h_ret b r ->
       clauses_typing sg ln g ei ts r b h.h_clauses ->
-      typing sg ln g d tl (EHandle e h) b r
+      typing sg ln g d (EHandle e h) b r
 
   | T_OpenEff :
-      #g:ctx -> #d:jctx -> #tl:bool -> #r':typ -> #e:exp -> #t1:typ -> #r1:typ -> #t2:typ -> #r:typ ->
-      typing sg ln g d false e (t_fun t1 r1 t2) r ->
+      #g:ctx -> #d:jctx -> #r':typ -> #e:exp -> #t1:typ -> #r1:typ -> #t2:typ -> #r:typ ->
+      typing sg ln g [] e (t_fun t1 r1 t2) r ->
       squash (entails (hyps g) (CDisj r1 r') /\ check sg g r' (KRow EEffect)) ->
-      typing sg ln g d tl (EOpenEff r' e) (t_fun t1 (TRowUnion r1 r') t2) r
+      typing sg ln g d (EOpenEff r' e) (t_fun t1 (TRowUnion r1 r') t2) r
 
   (* -- Regions (spec 05 §Regions) -- *)
 
@@ -436,66 +438,65 @@ noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> exp -> typ -> typ
       and `ρ` are kinded where `a` is not in scope, `a` occurs in
       neither. *)
   | T_Region :
-      #g:ctx -> #d:jctx -> #tl:bool -> #lay:layout -> #es:list exp -> #body:exp -> #b:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #lay:layout -> #es:list exp -> #body:exp -> #b:typ -> #r:typ ->
       squash (check sg g (layout_row lay) (KRow EType) /\ L.noRepeats (L.map fst lay)) ->
       squash (check sg g b KType /\ check sg g r (KRow EEffect)) ->
-      exps_typing sg ln g d false r es (L.map snd lay) ->
+      exps_typing sg ln g [] r es (L.map snd lay) ->
       (a: atom{~(L.mem a (rdom g)) /\ ~(L.mem a (frn_exp body))} ->
-        typing sg ln (enter_region g a lay) [] true (open_region a body) b
+        typing sg ln (enter_region g a lay) [] (open_region a body) b
           (TRowExt (EntRegion (RFree a)) r)) ->
-      typing sg ln g d tl (ERegion lay es body) b r
+      typing sg ln g d (ERegion lay es body) b r
 
   (** `readCell a.k`: the region `a` is in scope with a cell `k : σ`, and it
       is ambient. *)
   | T_ReadCell :
-      #g:ctx -> #d:jctx -> #tl:bool -> #a:atom -> #k:key -> #lay:layout -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #a:atom -> #k:key -> #lay:layout -> #t:typ -> #r:typ ->
       squash (L.assoc a g.regions == Some lay /\ L.assoc k lay == Some t) ->
       squash (L.mem (RegionKey (RFree a)) (known_keys r)) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (EReadCell (RFree a) k) t r
+      typing sg ln g d (EReadCell (RFree a) k) t r
 
   | T_WriteCell :
-      #g:ctx -> #d:jctx -> #tl:bool -> #a:atom -> #k:key -> #e:exp -> #lay:layout -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #a:atom -> #k:key -> #e:exp -> #lay:layout -> #t:typ -> #r:typ ->
       squash (L.assoc a g.regions == Some lay /\ L.assoc k lay == Some t) ->
       squash (L.mem (RegionKey (RFree a)) (known_keys r)) ->
-      typing sg ln g d false e t r ->
-      typing sg ln g d tl (EWriteCell (RFree a) k e) t_unit r
+      typing sg ln g [] e t r ->
+      typing sg ln g d (EWriteCell (RFree a) k e) t_unit r
 
   (* -- Run-time forms (spec 06 §Run-time forms, §Opaque values) -- *)
 
   (** `match θ dt`: each `θ[i]` is a typed value, and `dt` is typed under
       an `Ω` every entry of which `θ` justifies (`match_typing`). *)
   | T_Match :
-      #g:ctx -> #d:jctx -> #tl:bool -> #th:list exp -> #dt:dtree -> #ts:list typ -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #th:list exp -> #dt:dtree -> #ts:list typ -> #t:typ -> #r:typ ->
       om:octx ->
-      exps_typing sg ln g d false r th ts ->
+      exps_typing sg ln g [] r th ts ->
       squash (L.for_all (V.is_value sg) th) ->
-      match_typing sg ln g d r th om ->
-      dt_typing sg ln g d tl om dt t r ->
-      typing sg ln g d tl (EMatch th dt) t r
+      match_typing sg ln g [] r th om ->
+      dt_typing sg ln g d om dt t r ->
+      typing sg ln g d (EMatch th dt) t r
 
   (** `openEffC [ρ'] e` widens the ambient row of a computation. *)
   | T_OpenEffC :
-      #g:ctx -> #d:jctx -> #tl:bool -> #r':typ -> #e:exp -> #t:typ -> #r0:typ ->
-      typing sg ln g d false e t r0 ->
+      #g:ctx -> #d:jctx -> #r':typ -> #e:exp -> #t:typ -> #r0:typ ->
+      typing sg ln g [] e t r0 ->
       squash (entails (hyps g) (CDisj r0 r') /\ check sg g r' (KRow EEffect)) ->
-      typing sg ln g d tl (EOpenEffC r' e) t (TRowUnion r0 r')
+      typing sg ln g d (EOpenEffC r' e) t (TRowUnion r0 r')
 
   (** The type of a location is closed (`lctx_ok`). *)
   | T_Force :
-      #g:ctx -> #d:jctx -> #tl:bool -> #nu:atom -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #nu:atom -> #t:typ -> #r:typ ->
       squash (L.nth ln nu == Some t /\ check sg (closed_ctx g.regions) t KType) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (EForce nu) t r
+      typing sg ln g d (EForce nu) t r
 
-  (** The initializer runs in `g`, at `()`, under no join point and out of
-      tail position. *)
+  (** The initializer runs in `g`, at `()`, under no join point. *)
   | T_Fill :
-      #g:ctx -> #d:jctx -> #tl:bool -> #nu:atom -> #e:exp -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #nu:atom -> #e:exp -> #t:typ -> #r:typ ->
       squash (L.nth ln nu == Some t /\ check sg (closed_ctx g.regions) t KType) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g [] false e t TRowEmpty ->
-      typing sg ln g d tl (EFill nu e) t r
+      typing sg ln g [] e t TRowEmpty ->
+      typing sg ln g d (EFill nu e) t r
 
   (** `region⟨a⟩ θ in e : β ! ρ`, the source rule with the region `a` of
       `Γ_R` in place of the binder and the cells `θ` in place of the
@@ -504,35 +505,35 @@ noeq type typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> exp -> typ -> typ
       and the body is typed in `g`, under no join point, at
       `( region a | ρ )`. *)
   | T_RegionOpen :
-      #g:ctx -> #d:jctx -> #tl:bool -> #a:atom -> #cells:list (key & exp) -> #body:exp ->
+      #g:ctx -> #d:jctx -> #a:atom -> #cells:list (key & exp) -> #body:exp ->
       #lay:layout -> #b:typ -> #r:typ ->
       squash (L.assoc a g.regions == Some lay) ->
       squash (check sg (closed_ctx g.regions) b KType /\
               check sg (closed_ctx g.regions) r (KRow EEffect)) ->
       squash (~(L.mem a (frn_ty b @ frn_ty r))) ->
       cells_typing sg ln g cells lay ->
-      typing sg ln g [] true body b (TRowExt (EntRegion (RFree a)) r) ->
-      typing sg ln g d tl (ERegionOpen a cells body) b r
+      typing sg ln g [] body b (TRowExt (EntRegion (RFree a)) r) ->
+      typing sg ln g d (ERegionOpen a cells body) b r
 
   (** `opaque ω [τ]`, `τ` an application of a type constructor of class
       opaque. *)
   | T_Opaque :
-      #g:ctx -> #d:jctx -> #tl:bool -> #w:nat -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #w:nat -> #t:typ -> #r:typ ->
       squash (opaque_type sg t /\ check sg g t KType) ->
       squash (check sg g r (KRow EEffect)) ->
-      typing sg ln g d tl (EOpaque w t) t r
+      typing sg ln g d (EOpaque w t) t r
 
 (** `Γ; Δ ⊢ ē : τ̄ ! ρ`, pointwise, the lengths agreeing. *)
-and exps_typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> typ -> list exp -> list typ -> Type =
+and exps_typing (sg: sig) (ln: lctx) : ctx -> jctx -> typ -> list exp -> list typ -> Type =
   | TE_Nil :
-      #g:ctx -> #d:jctx -> #tl:bool -> #r:typ ->
+      #g:ctx -> #d:jctx -> #r:typ ->
       squash (check sg g r (KRow EEffect)) ->
-      exps_typing sg ln g d tl r [] []
+      exps_typing sg ln g d r [] []
   | TE_Cons :
-      #g:ctx -> #d:jctx -> #tl:bool -> #r:typ -> #e:exp -> #es:list exp -> #t:typ -> #ts:list typ ->
-      typing sg ln g d tl e t r ->
-      exps_typing sg ln g d tl r es ts ->
-      exps_typing sg ln g d tl r (e :: es) (t :: ts)
+      #g:ctx -> #d:jctx -> #r:typ -> #e:exp -> #es:list exp -> #t:typ -> #ts:list typ ->
+      typing sg ln g d e t r ->
+      exps_typing sg ln g d r es ts ->
+      exps_typing sg ln g d r (e :: es) (t :: ts)
 
 (** The arguments of a chain `M.g [[κ̄]] α1 … αn` headed by a constructor
     or a foreign, each well formed against the cursor before it (spec 05
@@ -567,12 +568,12 @@ and chain_typing (sg: sig) (ln: lctx) : ctx -> jctx -> typ -> exp -> Type =
       #r1:typ -> #t2:typ ->
       chain_typing sg ln g d r e ->
       squash (chain_cursor sg e == Some (t, th) /\ as_function sg t == Some (t1, r1, t2)) ->
-      typing sg ln g d false v (sub_ty th t1) r ->
+      typing sg ln g d v (sub_ty th t1) r ->
       chain_typing sg ln g d r (EApp e v)
 
 (** The members of a `letrec`, under the context with every member bound:
     each annotation has kind `Type`, and each initializer has its member's
-    type at `()`, under no join point and out of tail position. *)
+    type at `()`, under no join point. *)
 and binds_typing (sg: sig) (ln: lctx) : ctx -> list (typ & exp) -> Type =
   | TB_Nil :
       #g:ctx ->
@@ -580,7 +581,7 @@ and binds_typing (sg: sig) (ln: lctx) : ctx -> list (typ & exp) -> Type =
   | TB_Cons :
       #g:ctx -> #t:typ -> #e:exp -> #bs:list (typ & exp) ->
       squash (check sg g t KType) ->
-      typing sg ln g [] false e t TRowEmpty ->
+      typing sg ln g [] e t TRowEmpty ->
       binds_typing sg ln g bs ->
       binds_typing sg ln g ((t, e) :: bs)
 
@@ -594,7 +595,7 @@ and cells_typing (sg: sig) (ln: lctx) : ctx -> list (key & exp) -> layout -> Typ
   | TC_Cons :
       #g:ctx -> #k:key -> #v:exp -> #t:typ -> #cs:list (key & exp) -> #lay:layout ->
       squash (V.is_value sg v) ->
-      typing sg ln g [] true v t TRowEmpty ->
+      typing sg ln g [] v t TRowEmpty ->
       cells_typing sg ln g cs lay ->
       cells_typing sg ln g ((k, v) :: cs) ((k, t) :: lay)
 
@@ -608,152 +609,152 @@ and match_typing (sg: sig) (ln: lctx) : ctx -> jctx -> typ -> list exp -> octx -
   | TM_Cons :
       #g:ctx -> #d:jctx -> #r:typ -> #th:list exp -> #o:occ -> #t:typ -> #om:octx -> #v:exp ->
       squash (proj sg th o == Some v) ->
-      typing sg ln g d false v t r ->
+      typing sg ln g d v t r ->
       match_typing sg ln g d r th om ->
       match_typing sg ln g d r th ((o, t) :: om)
 
 (** `Γ; Δ; Ω ⊢ dt : τ ! ρ` *)
-and dt_typing (sg: sig) (ln: lctx) : ctx -> jctx -> bool -> octx -> dtree -> typ -> typ -> Type =
+and dt_typing (sg: sig) (ln: lctx) : ctx -> jctx -> octx -> dtree -> typ -> typ -> Type =
   | TD_Leaf :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #e:exp -> #t:typ -> #r:typ ->
-      typing sg ln g d tl e t r ->
-      dt_typing sg ln g d tl om (DLeaf e) t r
+      #g:ctx -> #d:jctx -> #om:octx -> #e:exp -> #t:typ -> #r:typ ->
+      typing sg ln g d e t r ->
+      dt_typing sg ln g d om (DLeaf e) t r
 
   | TD_Bind :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #dt:dtree -> #t_o:typ -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #dt:dtree -> #t_o:typ -> #t:typ -> #r:typ ->
       occ_typing sg g om o t_o ->
-      dt_typing sg ln (push_var g t_o) d tl om dt t r ->
-      dt_typing sg ln g d tl om (DBind o dt) t r
+      dt_typing sg ln (push_var g t_o) d om dt t r ->
+      dt_typing sg ln g d om (DBind o dt) t r
 
   (** `switchCtor` without a default. The occurrence has the type of a data
       type `T [[κ̄]] σ̄`, written in the derivation, whose constructors `cs`
       the branches name, each once, and exhaust. *)
   | TD_SwitchCtor :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #bs:list (qname & dtree) ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #bs:list (qname & dtree) ->
       #t_o:typ -> #t:typ -> #r:typ ->
       tq:qname -> ks:list kind -> ss:list typ -> cs:list qname ->
       occ_typing sg g om o t_o ->
       squash (ty_eq t_o (tapps (TCon tq ks) ss) /\ check sg g (tapps (TCon tq ks) ss) KType) ->
       squash (has_class sg tq (TcData cs)) ->
       squash (L.noRepeats (L.map fst bs) /\ (forall (c: qname). L.mem c cs ==> L.mem c (L.map fst bs))) ->
-      ctor_brs_typing sg ln g d tl om o ks ss cs bs t r ->
-      dt_typing sg ln g d tl om (DSwitchCtor o bs None) t r
+      ctor_brs_typing sg ln g d om o ks ss cs bs t r ->
+      dt_typing sg ln g d om (DSwitchCtor o bs None) t r
 
   (** `switchCtor` with a default, under the same `Ω`. *)
   | TD_SwitchCtorDef :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #bs:list (qname & dtree) ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #bs:list (qname & dtree) ->
       #df:dtree -> #t_o:typ -> #t:typ -> #r:typ ->
       tq:qname -> ks:list kind -> ss:list typ -> cs:list qname ->
       occ_typing sg g om o t_o ->
       squash (ty_eq t_o (tapps (TCon tq ks) ss) /\ check sg g (tapps (TCon tq ks) ss) KType) ->
       squash (has_class sg tq (TcData cs)) ->
       squash (L.noRepeats (L.map fst bs)) ->
-      ctor_brs_typing sg ln g d tl om o ks ss cs bs t r ->
-      dt_typing sg ln g d tl om df t r ->
-      dt_typing sg ln g d tl om (DSwitchCtor o bs (Some df)) t r
+      ctor_brs_typing sg ln g d om o ks ss cs bs t r ->
+      dt_typing sg ln g d om df t r ->
+      dt_typing sg ln g d om (DSwitchCtor o bs (Some df)) t r
 
   (** `switchLit`: the occurrence has a literal type `lq`, the literals are
       distinct and of that type, and the default is mandatory. *)
   | TD_SwitchLit :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #bs:list (lit & dtree) -> #df:dtree ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #bs:list (lit & dtree) -> #df:dtree ->
       #t_o:typ -> #t:typ -> #r:typ ->
       lq:qname ->
       occ_typing sg g om o t_o ->
       squash (ty_eq t_o (TCon lq []) /\ has_class sg lq (TcIntrinsic ClsLiteral)) ->
       squash (L.noRepeats (L.map fst bs)) ->
-      lit_brs_typing sg ln g d tl om (TCon lq []) bs t r ->
-      dt_typing sg ln g d tl om df t r ->
-      dt_typing sg ln g d tl om (DSwitchLit o bs df) t r
+      lit_brs_typing sg ln g d om (TCon lq []) bs t r ->
+      dt_typing sg ln g d om df t r ->
+      dt_typing sg ln g d om (DSwitchLit o bs df) t r
 
   (** `switchKey` without a default. The occurrence has the type
       `Variant vr`, `vr` written in the derivation, and the branches, with
       distinct keys and the payload types `kts`, split it with the residual
       `()`: they exhaust it. *)
   | TD_SwitchKey :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #bs:list (key & dtree) ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #bs:list (key & dtree) ->
       #t_o:typ -> #t:typ -> #r:typ ->
       vr:typ -> kts:list (key & typ) ->
       occ_typing sg g om o t_o ->
       squash (ty_eq t_o (t_variant vr) /\ check sg g vr (KRow EType)) ->
       squash (L.noRepeats (L.map fst bs)) ->
       squash (key_split vr kts TRowEmpty) ->
-      key_brs_typing sg ln g d tl om o kts bs t r ->
-      dt_typing sg ln g d tl om (DSwitchKey o bs None) t r
+      key_brs_typing sg ln g d om o kts bs t r ->
+      dt_typing sg ln g d om (DSwitchKey o bs None) t r
 
   (** `switchKey` with a default. The branches split `vr` with a kinded
       residual `vr'`, written in the derivation, which is the type
       `Variant vr'` the occurrence takes in the default. *)
   | TD_SwitchKeyDef :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #bs:list (key & dtree) -> #df:dtree ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #bs:list (key & dtree) -> #df:dtree ->
       #t_o:typ -> #t:typ -> #r:typ ->
       vr:typ -> vr':typ -> kts:list (key & typ) ->
       occ_typing sg g om o t_o ->
       squash (ty_eq t_o (t_variant vr) /\ check sg g vr (KRow EType)) ->
       squash (L.noRepeats (L.map fst bs)) ->
       squash (key_split vr kts vr' /\ check sg g vr' (KRow EType)) ->
-      key_brs_typing sg ln g d tl om o kts bs t r ->
-      dt_typing sg ln g d tl ((o, t_variant vr') :: om) df t r ->
-      dt_typing sg ln g d tl om (DSwitchKey o bs (Some df)) t r
+      key_brs_typing sg ln g d om o kts bs t r ->
+      dt_typing sg ln g d ((o, t_variant vr') :: om) df t r ->
+      dt_typing sg ln g d om (DSwitchKey o bs (Some df)) t r
 
   | TD_Guard :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #e:exp -> #dt1:dtree -> #dt2:dtree -> #t:typ -> #r:typ ->
-      typing sg ln g d false e t_bool r ->
-      dt_typing sg ln g d tl om dt1 t r ->
-      dt_typing sg ln g d tl om dt2 t r ->
-      dt_typing sg ln g d tl om (DGuard e dt1 dt2) t r
+      #g:ctx -> #d:jctx -> #om:octx -> #e:exp -> #dt1:dtree -> #dt2:dtree -> #t:typ -> #r:typ ->
+      typing sg ln g [] e t_bool r ->
+      dt_typing sg ln g d om dt1 t r ->
+      dt_typing sg ln g d om dt2 t r ->
+      dt_typing sg ln g d om (DGuard e dt1 dt2) t r
 
 (** The branches of a `switchCtor` on `o : T [[κ̄]] σ̄`, `T`'s constructors
     being `cs`: each branch names one of them, and is typed with its fields
     `o ! Ctor . j ↦ τ_j[ā := σ̄]` added to `Ω`. *)
 and ctor_brs_typing (sg: sig) (ln: lctx)
-  : ctx -> jctx -> bool -> octx -> occ -> list kind -> list typ -> list qname ->
+  : ctx -> jctx -> octx -> occ -> list kind -> list typ -> list qname ->
     list (qname & dtree) -> typ -> typ -> Type =
   | TCB_Nil :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #ks:list kind -> #ss:list typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #ks:list kind -> #ss:list typ ->
       #cs:list qname -> #t:typ -> #r:typ ->
       squash (check sg g t KType /\ check sg g r (KRow EEffect)) ->
-      ctor_brs_typing sg ln g d tl om o ks ss cs [] t r
+      ctor_brs_typing sg ln g d om o ks ss cs [] t r
   | TCB_Cons :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #ks:list kind -> #ss:list typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #ks:list kind -> #ss:list typ ->
       #cs:list qname -> #c:qname -> #dt:dtree -> #bs:list (qname & dtree) -> #t:typ -> #r:typ ->
       #fs:list typ ->
       squash (L.mem c cs /\ ctor_fields sg c ks ss == Some fs) ->
-      dt_typing sg ln g d tl (L.append (field_occs o c 0 fs) om) dt t r ->
-      ctor_brs_typing sg ln g d tl om o ks ss cs bs t r ->
-      ctor_brs_typing sg ln g d tl om o ks ss cs ((c, dt) :: bs) t r
+      dt_typing sg ln g d (L.append (field_occs o c 0 fs) om) dt t r ->
+      ctor_brs_typing sg ln g d om o ks ss cs bs t r ->
+      ctor_brs_typing sg ln g d om o ks ss cs ((c, dt) :: bs) t r
 
 (** The branches of a `switchLit` at the literal type `lt`. *)
 and lit_brs_typing (sg: sig) (ln: lctx)
-  : ctx -> jctx -> bool -> octx -> typ -> list (lit & dtree) -> typ -> typ -> Type =
+  : ctx -> jctx -> octx -> typ -> list (lit & dtree) -> typ -> typ -> Type =
   | TLB_Nil :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #lt:typ -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #lt:typ -> #t:typ -> #r:typ ->
       squash (check sg g t KType /\ check sg g r (KRow EEffect)) ->
-      lit_brs_typing sg ln g d tl om lt [] t r
+      lit_brs_typing sg ln g d om lt [] t r
   | TLB_Cons :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #lt:typ -> #c:lit -> #dt:dtree ->
+      #g:ctx -> #d:jctx -> #om:octx -> #lt:typ -> #c:lit -> #dt:dtree ->
       #bs:list (lit & dtree) -> #t:typ -> #r:typ ->
       squash (ty_eq (lit_type c) lt) ->
-      dt_typing sg ln g d tl om dt t r ->
-      lit_brs_typing sg ln g d tl om lt bs t r ->
-      lit_brs_typing sg ln g d tl om lt ((c, dt) :: bs) t r
+      dt_typing sg ln g d om dt t r ->
+      lit_brs_typing sg ln g d om lt bs t r ->
+      lit_brs_typing sg ln g d om lt ((c, dt) :: bs) t r
 
 (** The branches of a `switchKey` on `o` against their keys and payload
     types `kts`, in the same order: the branch at `k : τ` is typed with
     `o ? k ↦ τ` added to `Ω`, `τ` a type of kind `Type`. *)
 and key_brs_typing (sg: sig) (ln: lctx)
-  : ctx -> jctx -> bool -> octx -> occ -> list (key & typ) -> list (key & dtree) -> typ -> typ ->
+  : ctx -> jctx -> octx -> occ -> list (key & typ) -> list (key & dtree) -> typ -> typ ->
     Type =
   | TKB_Nil :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #t:typ -> #r:typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #t:typ -> #r:typ ->
       squash (check sg g t KType /\ check sg g r (KRow EEffect)) ->
-      key_brs_typing sg ln g d tl om o [] [] t r
+      key_brs_typing sg ln g d om o [] [] t r
   | TKB_Cons :
-      #g:ctx -> #d:jctx -> #tl:bool -> #om:octx -> #o:occ -> #k:key -> #pt:typ ->
+      #g:ctx -> #d:jctx -> #om:octx -> #o:occ -> #k:key -> #pt:typ ->
       #kts:list (key & typ) -> #dt:dtree -> #bs:list (key & dtree) -> #t:typ -> #r:typ ->
       squash (check sg g pt KType) ->
-      dt_typing sg ln g d tl ((OVariant o k, pt) :: om) dt t r ->
-      key_brs_typing sg ln g d tl om o kts bs t r ->
-      key_brs_typing sg ln g d tl om o ((k, pt) :: kts) ((k, dt) :: bs) t r
+      dt_typing sg ln g d ((OVariant o k, pt) :: om) dt t r ->
+      key_brs_typing sg ln g d om o kts bs t r ->
+      key_brs_typing sg ln g d om o ((k, pt) :: kts) ((k, dt) :: bs) t r
 
 (** The operation clauses of a handler of `E τ̄` (`ei` being `E`) at the
     outer row `ρ` and the answer type `β` (spec 05 §Effects; spec 03 §full
@@ -778,7 +779,7 @@ and clauses_typing (sg: sig) (ln: lctx)
       squash (check sg (push_tvars g os.binders) s KType /\ ty_eq s (eff_inst nb ts os.arg)) ->
       squash (check sg (push_tvars g os.binders) kt KType /\
               ty_eq kt (t_fun (eff_inst nb ts os.res) (ren_ty (shift nb) r) (ren_ty (shift nb) b))) ->
-      typing sg ln (push_var (push_var (push_tvars g os.binders) s) kt) [] true body
+      typing sg ln (push_var (push_var (push_tvars g os.binders) s) kt) [] body
         (ren_ty (shift nb) b) (ren_ty (shift nb) r) ->
       clauses_typing sg ln g ei ts r b cs ->
       clauses_typing sg ln g ei ts r b (CFull op nb s kt body :: cs)
@@ -787,7 +788,7 @@ and clauses_typing (sg: sig) (ln: lctx)
       #op:opname -> #nb:nat -> #s:typ -> #body:exp -> #cs:list clause -> #os:op_sig ->
       squash (op_of ei op == Some os /\ nb == L.length os.binders) ->
       squash (check sg (push_tvars g os.binders) s KType /\ ty_eq s (eff_inst nb ts os.arg)) ->
-      typing sg ln (push_var (push_tvars g os.binders) s) [] true body
+      typing sg ln (push_var (push_tvars g os.binders) s) [] body
         (eff_inst nb ts os.res) (ren_ty (shift nb) r) ->
       clauses_typing sg ln g ei ts r b cs ->
       clauses_typing sg ln g ei ts r b (CFast op nb s body :: cs)

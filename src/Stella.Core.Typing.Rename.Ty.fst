@@ -312,23 +312,23 @@ let eff_params_length (sg: sig) (g: ctx) (lbl: option string) (q: qname) (ts: li
 
 (* Casts along equalities of indices. *)
 
-let cast (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (d': jctx{d' == d}) (e': exp{e' == e}) (t': typ{t' == t})
+let cast (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (d': jctx{d' == d}) (e': exp{e' == e}) (t': typ{t' == t})
   (r': typ{r' == r})
-  : typing sg ln g d' tl e' t' r' = h
+  : typing sg ln g d' e' t' r' = h
 
-let cast_dt (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#dt: dtree)
-  (#t #r: typ) (h: dt_typing sg ln g d tl om dt t r) (om': octx{om' == om}) (t': typ{t' == t})
+let cast_dt (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx) (#dt: dtree)
+  (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (om': octx{om' == om}) (t': typ{t' == t})
   (r': typ{r' == r})
-  : dt_typing sg ln g d tl om' dt t' r' = h
+  : dt_typing sg ln g d om' dt t' r' = h
 
 (* The rules, one builder each. A builder takes the renamed premises,
    in the form the induction produces them, and the indices of the
    conclusion with their equations to the rule's parts, and concludes the
    renamed judgement. *)
 
-let tr (sg: sig) (ln: lctx) (g': ctx) (xi: ren) (d: jctx) (tl: bool) (e: exp) (t r: typ) : Type =
-  typing sg ln g' (ren_jctx xi d) tl (ren_ty_exp xi e) (ren_ty xi t) (ren_ty xi r)
+let tr (sg: sig) (ln: lctx) (g': ctx) (xi: ren) (d: jctx) (e: exp) (t r: typ) : Type =
+  typing sg ln g' (ren_jctx xi d) (ren_ty_exp xi e) (ren_ty xi t) (ren_ty xi r)
 
 let ren_perform_eq (xi: ren) (k: key) (op: opname) (ss: list typ) (e1: exp)
   : Lemma (ren_ty_exp xi (EPerform k op ss e1)
@@ -398,42 +398,42 @@ let ren_var_ext (xi: ren) (k: key) (t r0: typ)
            t_variant (TRowExt (EntTy k (ren_ty xi t)) (ren_ty xi r0))) =
   ren_t_variant xi (TRowExt (EntTy k t) r0)
 
-let b_var (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_var (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (i: nat)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EVar i /\ L.nth g.vars i == Some t /\
                    check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   check_ren sg xi g g' r (KRow EEffect);
   assert (L.nth g.vars i == L.nth g.vars i);
-  T_Var #sg #ln #g' #(ren_jctx xi d) #tl #i #(ren_ty xi t) #(ren_ty xi r) () ()
+  T_Var #sg #ln #g' #(ren_jctx xi d) #i #(ren_ty xi t) #(ren_ty xi r) () ()
 
-let b_global (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_global (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (q: qname) (ks: list kind) (nk: nat) (t0: typ)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires sig_ok sg /\ ty_ren_ok xi g g' /\ e == EGlobal q ks /\ t == kinst_ty ks t0 /\
                    global_type sg q == Some (nk, t0) /\ L.length ks == nk /\ qkinds_wf g.nk ks /\
                    check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   check_ren sg xi g g' r (KRow EEffect);
   global_inst_ren sg q nk t0 ks xi;
-  T_Global #sg #ln #g' #(ren_jctx xi d) #tl #q #ks #nk #t0 #(ren_ty xi r) () () ()
+  T_Global #sg #ln #g' #(ren_jctx xi d) #q #ks #nk #t0 #(ren_ty xi r) () () ()
 
-let b_lit (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_lit (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (c: lit)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ELit c /\ t == lit_type c /\
              check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   check_ren sg xi g g' r (KRow EEffect);
   ren_lit_type xi c;
-  T_Lit #sg #ln #g' #(ren_jctx xi d) #tl #c #(ren_ty xi r) ()
+  T_Lit #sg #ln #g' #(ren_jctx xi d) #c #(ren_ty xi r) ()
 
-let b_lam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_lam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (t1 r1: typ) (body: exp) (t2: typ)
-  (hb: typing sg ln (push_var g' (ren_ty xi t1)) (ren_jctx xi []) true (ren_ty_exp xi body)
+  (hb: typing sg ln (push_var g' (ren_ty xi t1)) (ren_jctx xi []) (ren_ty_exp xi body)
          (ren_ty xi t2) (ren_ty xi r1))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ELam t1 r1 body /\ t == t_fun t1 r1 t2 /\
                    check sg g t1 KType /\ check sg g r1 (KRow EEffect) /\
                      check sg g r (KRow EEffect))
@@ -442,68 +442,68 @@ let b_lam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: 
   check_ren sg xi g g' r1 (KRow EEffect);
   check_ren sg xi g g' r (KRow EEffect);
   ren_t_fun xi t1 r1 t2;
-  T_Lam #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty xi t1) #(ren_ty xi r1) #(ren_ty_exp xi body)
+  T_Lam #sg #ln #g' #(ren_jctx xi d) #(ren_ty xi t1) #(ren_ty xi r1) #(ren_ty_exp xi body)
     #(ren_ty xi t2) #(ren_ty xi r) () () hb
 
-let b_app (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_app (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1 e2: exp) (t1 t2: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (t_fun t1 r t2))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (t_fun t1 r t2))
       (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (ren_ty xi t1) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r) (requires e == EApp e1 e2 /\ t == t2) (ensures fun _ -> True) =
+  (h2: typing sg ln g' [] (ren_ty_exp xi e2) (ren_ty xi t1) (ren_ty xi r))
+  : Pure (tr sg ln g' xi d e t r) (requires e == EApp e1 e2 /\ t == t2) (ensures fun _ -> True) =
   ren_app_eq xi e1 e2;
   ren_t_fun xi t1 r t2;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (t_fun (ren_ty xi t1) (ren_ty xi r) (ren_ty xi t2)) (ren_ty xi r) = h1 in
   T_App h1 h2
 
-let b_chain (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_chain (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (e: exp) (t r: typ)
   (t0: typ) (th: tsub)
-  (hc: chain_typing sg ln g' (ren_jctx xi d) (ren_ty xi r) (ren_ty_exp xi e))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (hc: chain_typing sg ln g' [] (ren_ty xi r) (ren_ty_exp xi e))
+  : Pure (tr sg ln g' xi d e t r)
          (requires sig_ok sg /\ chain_cursor sg e == Some (t0, th) /\ t == sub_ty th t0)
          (ensures fun _ -> True) =
   chain_cursor_ren_ty sg xi e t0 th;
   let Some (_, th') = chain_cursor sg (ren_ty_exp xi e) in
-  T_Chain #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty_exp xi e) #t0 #th' #(ren_ty xi r) hc ()
+  T_Chain #sg #ln #g' #(ren_jctx xi d) #(ren_ty_exp xi e) #t0 #th' #(ren_ty xi r) hc ()
 
-let b_tylam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_tylam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: kind) (body: exp) (t0: typ)
-  (hb: typing sg ln (push_tvar g' k) (ren_jctx (up_ren xi) []) true (ren_ty_exp (up_ren xi) body)
+  (hb: typing sg ln (push_tvar g' k) (ren_jctx (up_ren xi) []) (ren_ty_exp (up_ren xi) body)
          (ren_ty (up_ren xi) t0) (ren_ty (up_ren xi) TRowEmpty))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ETyLam k body /\ t == TForall k t0 /\
                    kind_wf g.nk k /\ qkind g.nk k /\ value_form sg body /\
                      check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   value_form_ren_ty sg (up_ren xi) body;
   check_ren sg xi g g' r (KRow EEffect);
-  let hb : typing sg ln (push_tvar g' k) [] true (ren_ty_exp (up_ren xi) body)
+  let hb : typing sg ln (push_tvar g' k) [] (ren_ty_exp (up_ren xi) body)
     (ren_ty (up_ren xi) t0)
              TRowEmpty = hb in
-  T_TyLam #sg #ln #g' #(ren_jctx xi d) #tl #k #(ren_ty_exp (up_ren xi) body)
+  T_TyLam #sg #ln #g' #(ren_jctx xi d) #k #(ren_ty_exp (up_ren xi) body)
     #(ren_ty (up_ren xi) t0)
     #(ren_ty xi r) () () () hb
 
-let b_tyapp (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_tyapp (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1: exp) (s: typ) (k: kind) (t0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (TForall k t0))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (TForall k t0))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ETyApp e1 s /\ t == subst1_ty s t0 /\ check sg g s k)
          (ensures fun _ -> True) =
   check_ren sg xi g g' s k;
   ren_subst1 xi s t0;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
     (TForall k (ren_ty (up_ren xi) t0))
              (ren_ty xi r) = h1 in
-  T_TyApp #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty_exp xi e1) #(ren_ty xi s) h1 ()
+  T_TyApp #sg #ln #g' #(ren_jctx xi d) #(ren_ty_exp xi e1) #(ren_ty xi s) h1 ()
 
-let b_clam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_clam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (c: constr) (body: exp) (t0: typ)
-  (hb: typing sg ln (add_assump g' (ren_constr xi c)) (ren_jctx xi []) true (ren_ty_exp xi body)
+  (hb: typing sg ln (add_assump g' (ren_constr xi c)) (ren_jctx xi []) (ren_ty_exp xi body)
          (ren_ty xi t0) (ren_ty xi TRowEmpty))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ECLam c body /\ t == TConstr c t0 /\ constr_ok sg g c
              /\
                    value_form sg body /\ check sg g r (KRow EEffect))
@@ -511,56 +511,56 @@ let b_clam (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e:
   constr_ok_ren sg xi g g' c;
   value_form_ren_ty sg xi body;
   check_ren sg xi g g' r (KRow EEffect);
-  let hb : typing sg ln (add_assump g' (ren_constr xi c)) [] true (ren_ty_exp xi body)
+  let hb : typing sg ln (add_assump g' (ren_constr xi c)) [] (ren_ty_exp xi body)
     (ren_ty xi t0)
              TRowEmpty = hb in
-  T_CLam #sg #ln #g' #(ren_jctx xi d) #tl #(ren_constr xi c) #(ren_ty_exp xi body) #(ren_ty xi t0)
+  T_CLam #sg #ln #g' #(ren_jctx xi d) #(ren_constr xi c) #(ren_ty_exp xi body) #(ren_ty xi t0)
     #(ren_ty xi r) () () () hb
 
-let b_capp (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_capp (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1: exp) (c: constr)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (TConstr c t))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (TConstr c t))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ECApp e1 /\ entails (hyps g) c)
          (ensures fun _ -> True) =
   entails_into xi g g' c;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
     (TConstr (ren_constr xi c) (ren_ty xi t))
              (ren_ty xi r) = h1 in
   T_CApp h1 ()
 
-let b_let (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_let (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (t1: typ) (e1 e2: exp)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
-  (h2: typing sg ln (push_var g' (ren_ty xi t1)) (ren_jctx xi d) tl (ren_ty_exp xi e2) (ren_ty xi t)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
+  (h2: typing sg ln (push_var g' (ren_ty xi t1)) (ren_jctx xi d) (ren_ty_exp xi e2) (ren_ty xi t)
          (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ELet t1 e1 e2 /\ check sg g t1 KType)
          (ensures fun _ -> True) =
   ren_let_eq xi t1 e1 e2;
   check_ren sg xi g g' t1 KType;
   T_Let () h1 h2
 
-let b_letrec (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_letrec (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (e: exp) (t r: typ)
   (bs: list (typ & exp)) (body: exp)
   (hbs: binds_typing sg ln (push_vars g' (ren_tys xi (L.map fst bs))) (ren_ty_binds xi bs))
-  (hb: typing sg ln (push_vars g' (ren_tys xi (L.map fst bs))) (ren_jctx xi d) tl
+  (hb: typing sg ln (push_vars g' (ren_tys xi (L.map fst bs))) (ren_jctx xi d)
       (ren_ty_exp xi body)
          (ren_ty xi t) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires e == ELetRec bs body /\ Stella.Core.Init.init_safe_letrec sg bs)
          (ensures fun _ -> True) =
   IR.init_safe_ren_ty sg xi bs;
   ren_ty_binds_fst xi bs;
-  T_LetRec #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty_binds xi bs) #(ren_ty_exp xi body)
+  T_LetRec #sg #ln #g' #(ren_jctx xi d) #(ren_ty_binds xi bs) #(ren_ty_exp xi body)
     #(ren_ty xi t)
     #(ren_ty xi r) () hbs hb
 
-let b_conv (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_conv (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (t1 r1: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) tl (ren_ty_exp xi e) (ren_ty xi t1) (ren_ty xi r1))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h1: typing sg ln g' (ren_jctx xi d) (ren_ty_exp xi e) (ren_ty xi t1) (ren_ty xi r1))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ ty_eq t1 t /\ ty_eq r1 r /\ check sg g t KType /\
                    check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
@@ -568,38 +568,38 @@ let b_conv (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e:
   check_ren sg xi g g' t KType; check_ren sg xi g g' r (KRow EEffect);
   T_Conv h1 () ()
 
-let b_case (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_case (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (e: exp) (t r: typ)
   (es: list exp) (dt: dtree) (ts: list typ)
-  (hes: exps_typing sg ln g' (ren_jctx xi d) false (ren_ty xi r) (ren_ty_exps xi es)
+  (hes: exps_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi es)
       (ren_tys xi ts))
-  (hdt: dt_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi (scrut_occs 0 ts)) (ren_ty_dt xi dt)
+  (hdt: dt_typing sg ln g' (ren_jctx xi d) (ren_octx xi (scrut_occs 0 ts)) (ren_ty_dt xi dt)
           (ren_ty xi t) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r) (requires e == ECase es dt) (ensures fun _ -> True) =
+  : Pure (tr sg ln g' xi d e t r) (requires e == ECase es dt) (ensures fun _ -> True) =
   scrut_occs_ren xi 0 ts;
   T_Case hes (cast_dt hdt (scrut_occs 0 (ren_tys xi ts)) (ren_ty xi t) (ren_ty xi r))
 
-let b_letjoin (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_letjoin (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (ts: list typ) (e1 e2: exp)
-  (h1: typing sg ln (push_vars g' (ren_tys xi ts)) (ren_jctx xi ((ts, t, r) :: d)) true
+  (h1: typing sg ln (push_vars g' (ren_tys xi ts)) (ren_jctx xi ((ts, t, r) :: d))
          (ren_ty_exp xi e1) (ren_ty xi t) (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi ((ts, t, r) :: d)) tl (ren_ty_exp xi e2) (ren_ty xi t)
+  (h2: typing sg ln g' (ren_jctx xi ((ts, t, r) :: d)) (ren_ty_exp xi e2) (ren_ty xi t)
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ELetJoin ts t e1 e2 /\ tys_ok sg g ts /\
              check sg g t KType)
          (ensures fun _ -> True) =
   ren_letjoin_eq xi ts t e1 e2;
   tys_ok_ren sg xi g g' ts;
   check_ren sg xi g g' t KType;
-  T_LetJoin #sg #ln #g' #(ren_jctx xi d) #tl #(ren_tys xi ts) #(ren_ty xi t) #(ren_ty_exp xi e1)
+  T_LetJoin #sg #ln #g' #(ren_jctx xi d) #(ren_tys xi ts) #(ren_ty xi t) #(ren_ty_exp xi e1)
     #(ren_ty_exp xi e2) #(ren_ty xi r) () h1 h2
 
-let b_jump (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_jump (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (j: nat) (es: list exp) (ts: list typ)
-  (hes: exps_typing sg ln g' (ren_jctx xi d) false (ren_ty xi r) (ren_ty_exps xi es)
+  (hes: exps_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi es)
       (ren_tys xi ts))
-  : Pure (tr sg ln g' xi d tl e t r)
-         (requires ty_ren_ok xi g g' /\ e == EJump j es /\ tl == true /\
+  : Pure (tr sg ln g' xi d e t r)
+         (requires ty_ren_ok xi g g' /\ e == EJump j es /\
              L.nth d j == Some (ts, t, r) /\
                    check sg g t KType /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
@@ -608,21 +608,21 @@ let b_jump (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e:
   T_Jump #sg #ln #g' #(ren_jctx xi d) #j #(ren_ty_exps xi es) #(ren_tys xi ts) #(ren_ty xi t)
     #(ren_ty xi r) () () hes
 
-let b_recempty (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
-  : Pure (tr sg ln g' xi d tl e t r)
+let b_recempty (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ERecEmpty /\ t == t_record TRowEmpty /\
                    check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   ren_t_record xi TRowEmpty;
   check_ren sg xi g g' r (KRow EEffect);
-  T_RecEmpty #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty xi r) ()
+  T_RecEmpty #sg #ln #g' #(ren_jctx xi d) #(ren_ty xi r) ()
 
-let b_extend (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_extend (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (e1 e2: exp) (t1 r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (ren_ty xi (t_record r0))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
+  (h2: typing sg ln g' [] (ren_ty_exp xi e2) (ren_ty xi (t_record r0))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EExtend k e1 e2 /\
                    t == t_record (TRowExt (EntTy k t1) r0) /\ key_ok sg g k EType /\
                    entails (hyps g) (CLacks k r0))
@@ -633,76 +633,76 @@ let b_extend (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   assert (ren_ty xi (TRowExt (EntTy k t1) r0) == TRowExt (EntTy k (ren_ty xi t1)) (ren_ty xi r0));
   key_ok_rdom sg g g' k EType;
   entails_into xi g g' (CLacks k r0);
-  let h2 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (t_record (ren_ty xi r0))
+  let h2 : typing sg ln g' [] (ren_ty_exp xi e2) (t_record (ren_ty xi r0))
              (ren_ty xi r) = h2 in
-  T_Extend #sg #ln #g' #(ren_jctx xi d) #tl #k h1 h2 ()
+  T_Extend #sg #ln #g' #(ren_jctx xi d) #k h1 h2 ()
 
-let b_select (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_select (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (e1: exp) (r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1)
          (ren_ty xi (t_record (TRowExt (EntTy k t) r0))) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ESelect k e1 /\ key_ok sg g k EType)
          (ensures fun _ -> True) =
   ren_rec_ext xi k t r0;
   key_ok_rdom sg g g' k EType;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (t_record (TRowExt (EntTy k (ren_ty xi t)) (ren_ty xi r0))) (ren_ty xi r) = h1 in
   T_Select h1 ()
 
-let b_restrict (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_restrict (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (e1: exp) (t1 r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1)
          (ren_ty xi (t_record (TRowExt (EntTy k t1) r0))) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ERestrict k e1 /\ t == t_record r0 /\
              key_ok sg g k EType)
          (ensures fun _ -> True) =
   ren_rec_ext xi k t1 r0;
   key_ok_rdom sg g g' k EType;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (t_record (TRowExt (EntTy k (ren_ty xi t1)) (ren_ty xi r0))) (ren_ty xi r) = h1 in
   T_Restrict h1 ()
 
-let b_update (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_update (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (e1 e2: exp) (t1 t2 r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1)
          (ren_ty xi (t_record (TRowExt (EntTy k t1) r0))) (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (ren_ty xi t2) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h2: typing sg ln g' [] (ren_ty_exp xi e2) (ren_ty xi t2) (ren_ty xi r))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EUpdate k e1 e2 /\
                    t == t_record (TRowExt (EntTy k t2) r0) /\ key_ok sg g k EType)
          (ensures fun _ -> True) =
   ren_update_eq xi k e1 e2;
   ren_rec_ext xi k t1 r0; ren_rec_ext xi k t2 r0;
   key_ok_rdom sg g g' k EType;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (t_record (TRowExt (EntTy k (ren_ty xi t1)) (ren_ty xi r0))) (ren_ty xi r) = h1 in
   T_Update h1 h2 ()
 
-let b_merge (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_merge (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1 e2: exp) (r1 r2: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (t_record r1))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (t_record r1))
       (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (ren_ty xi (t_record r2))
+  (h2: typing sg ln g' [] (ren_ty_exp xi e2) (ren_ty xi (t_record r2))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EMerge e1 e2 /\ t == t_record (TRowUnion r1 r2) /\
                    entails (hyps g) (CDisj r1 r2))
          (ensures fun _ -> True) =
   ren_merge_eq xi e1 e2;
   ren_rec_union xi r1 r2; ren_t_record xi r1; ren_t_record xi r2;
   entails_into xi g g' (CDisj r1 r2);
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (t_record (ren_ty xi r1))
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1) (t_record (ren_ty xi r1))
              (ren_ty xi r) = h1 in
-  let h2 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e2) (t_record (ren_ty xi r2))
+  let h2 : typing sg ln g' [] (ren_ty_exp xi e2) (t_record (ren_ty xi r2))
              (ren_ty xi r) = h2 in
   T_Merge h1 h2 ()
 
-let b_inject (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_inject (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (r0: typ) (e1: exp) (t1: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EInject k r0 e1 /\
              t == t_variant (TRowExt (EntTy k t1) r0) /\
                    key_ok sg g k EType /\ entails (hyps g) (CLacks k r0) /\
@@ -713,13 +713,13 @@ let b_inject (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   key_ok_rdom sg g g' k EType;
   entails_into xi g g' (CLacks k r0);
   check_ren sg xi g g' r0 (KRow EType);
-  T_Inject #sg #ln #g' #(ren_jctx xi d) #tl #k #(ren_ty xi r0) h1 () ()
+  T_Inject #sg #ln #g' #(ren_jctx xi d) #k #(ren_ty xi r0) h1 () ()
 
-let b_weaken (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_weaken (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (t1: typ) (e1: exp) (r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (t_variant r0))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (t_variant r0))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EWeaken k t1 e1 /\
              t == t_variant (TRowExt (EntTy k t1) r0) /\
                    key_ok sg g k EType /\ entails (hyps g) (CLacks k r0) /\ check sg g t1 KType)
@@ -729,16 +729,16 @@ let b_weaken (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   key_ok_rdom sg g g' k EType;
   entails_into xi g g' (CLacks k r0);
   check_ren sg xi g g' t1 KType;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (t_variant (ren_ty xi r0))
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1) (t_variant (ren_ty xi r0))
              (ren_ty xi r) = h1 in
-  T_Weaken #sg #ln #g' #(ren_jctx xi d) #tl #k #(ren_ty xi t1) h1 () ()
+  T_Weaken #sg #ln #g' #(ren_jctx xi d) #k #(ren_ty xi t1) h1 () ()
 
-let b_variant_value (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp)
+let b_variant_value (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp)
   (t r: typ) (k: key) (v: exp) (pt vr0 vr: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e) (ren_ty xi (t_variant vr0))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e) (ren_ty xi (t_variant vr0))
       (ren_ty xi r))
-  (h2: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi v) (ren_ty xi pt) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h2: typing sg ln g' [] (ren_ty_exp xi v) (ren_ty xi pt) (ren_ty xi r))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ t == t_variant vr /\ V.is_value sg e /\
                    variant_view e == Some (k, v) /\ check sg g (t_variant vr) KType /\
                    check sg g pt KType /\ L.mem (k, PTy (canon pt)) (row_entries (canon vr)))
@@ -749,32 +749,32 @@ let b_variant_value (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: 
   check_ren sg xi g g' (t_variant vr) KType;
   check_ren sg xi g g' pt KType;
   entries_ren_ty xi vr k pt;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e) (t_variant (ren_ty xi vr0))
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e) (t_variant (ren_ty xi vr0))
              (ren_ty xi r) = h1 in
-  T_VariantValue #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty_exp xi e) #k #(ren_ty_exp xi v)
+  T_VariantValue #sg #ln #g' #(ren_jctx xi d) #(ren_ty_exp xi e) #k #(ren_ty_exp xi v)
     #(ren_ty xi pt)
     #(ren_ty xi r) (ren_ty xi vr0) (ren_ty xi vr) h1 () h2 ()
 
-let b_absurd (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_absurd (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1: exp)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (t_variant TRowEmpty))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (t_variant TRowEmpty))
          (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EAbsurd t e1 /\ check sg g t KType)
          (ensures fun _ -> True) =
   ren_t_variant xi TRowEmpty;
   check_ren sg xi g g' t KType;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (t_variant TRowEmpty)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1) (t_variant TRowEmpty)
     (ren_ty xi r) =
     h1 in
-  T_Absurd #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty xi t) h1 ()
+  T_Absurd #sg #ln #g' #(ren_jctx xi d) #(ren_ty xi t) h1 ()
 
-let b_perform (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_perform (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (k: key) (op: opname) (ss: list typ) (e1: exp) (q: qname) (ei: effect_info) (os: op_sig)
   (ts: list typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (op_inst ts ss os.arg))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (op_inst ts ss os.arg))
          (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires sig_ok sg /\ ty_ren_ok xi g g' /\ e == EPerform k op ss e1 /\
                    t == op_inst ts ss os.res /\
                    L.mem (k, PEff q (canon_tys ts)) (row_entries (canon r)) /\
@@ -788,9 +788,9 @@ let b_perform (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) 
   check_tys_length sg g ts ei.eff_params;
   check_tys_length sg g ss os.binders;
   op_inst_ren_sig sg q ei op os ts ss xi;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (op_inst (ren_tys xi ts) (ren_tys xi ss) os.arg) (ren_ty xi r) = h1 in
-  T_Perform #sg #ln #g' #(ren_jctx xi d) #tl #k #op #(ren_tys xi ss) #(ren_ty_exp xi e1)
+  T_Perform #sg #ln #g' #(ren_jctx xi d) #k #op #(ren_tys xi ss) #(ren_ty_exp xi e1)
     #(ren_ty xi r)
     #q #ei #os (ren_tys xi ts) () () () h1
 
@@ -798,16 +798,16 @@ let ren_handler (xi: ren) (hd: handler) : handler =
   { h_ent = ren_ent xi hd.h_ent; h_ret_ty = ren_ty xi hd.h_ret_ty;
     h_ret = ren_ty_exp xi hd.h_ret; h_clauses = ren_ty_cls xi hd.h_clauses }
 
-let b_handle (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_handle (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (e1: exp) (hd: handler) (lbl: option string) (q: qname) (ts: list typ) (ei: effect_info)
-  (h1: typing sg ln g' (ren_jctx xi []) true (ren_ty_exp xi e1) (ren_ty xi hd.h_ret_ty)
+  (h1: typing sg ln g' (ren_jctx xi []) (ren_ty_exp xi e1) (ren_ty xi hd.h_ret_ty)
          (ren_ty xi (TRowExt hd.h_ent r)))
-  (h2: typing sg ln (push_var g' (ren_ty xi hd.h_ret_ty)) (ren_jctx xi []) true
+  (h2: typing sg ln (push_var g' (ren_ty xi hd.h_ret_ty)) (ren_jctx xi [])
       (ren_ty_exp xi hd.h_ret)
          (ren_ty xi t) (ren_ty xi r))
   (hcl: clauses_typing sg ln g' ei (ren_tys xi ts) (ren_ty xi r) (ren_ty xi t)
       (ren_ty_cls xi hd.h_clauses))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EHandle e1 hd /\ hd.h_ent == EntEff lbl q ts /\
                    sg.effects q == Some ei /\
                    check sg g (TRowExt hd.h_ent r) (KRow EEffect) /\ check sg g hd.h_ret_ty KType /\
@@ -821,21 +821,21 @@ let b_handle (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   check_ren sg xi g g' t KType;
   check_ren sg xi g g' r (KRow EEffect);
   clause_ops_ren xi hd.h_clauses;
-  let h1 : typing sg ln g' [] true (ren_ty_exp xi e1) hd'.h_ret_ty
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1) hd'.h_ret_ty
     (TRowExt hd'.h_ent (ren_ty xi r)) = h1 in
-  let h2 : typing sg ln (push_var g' hd'.h_ret_ty) [] true hd'.h_ret (ren_ty xi t)
+  let h2 : typing sg ln (push_var g' hd'.h_ret_ty) [] hd'.h_ret (ren_ty xi t)
     (ren_ty xi r) = h2 in
   let hcl : clauses_typing sg ln g' ei (ren_tys xi ts) (ren_ty xi r)
     (ren_ty xi t) hd'.h_clauses = hcl in
-  T_Handle #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty_exp xi e1) #hd' #(ren_ty xi t)
+  T_Handle #sg #ln #g' #(ren_jctx xi d) #(ren_ty_exp xi e1) #hd' #(ren_ty xi t)
     #(ren_ty xi r) #lbl #q
     #(ren_tys xi ts) #ei () () () () h1 h2 hcl
 
-let b_openeff (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_openeff (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (r2: typ) (e1: exp) (t1 r1 t2: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi (t_fun t1 r1 t2))
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi (t_fun t1 r1 t2))
       (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EOpenEff r2 e1 /\ t == t_fun t1 (TRowUnion r1 r2) t2 /\
                    entails (hyps g) (CDisj r1 r2) /\ check sg g r2 (KRow EEffect))
          (ensures fun _ -> True) =
@@ -845,19 +845,19 @@ let b_openeff (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) 
   check_ren sg xi g g' r2 (KRow EEffect);
   ren_t_fun xi t1 r1 t2;
   ren_t_fun xi t1 (TRowUnion r1 r2) t2;
-  let h1 : typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1)
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1)
              (t_fun (ren_ty xi t1) (ren_ty xi r1) (ren_ty xi t2)) (ren_ty xi r) = h1 in
-  T_OpenEff #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty xi r2) h1 ()
+  T_OpenEff #sg #ln #g' #(ren_jctx xi d) #(ren_ty xi r2) h1 ()
 
-let b_region (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_region (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (lay: layout) (es: list exp) (body: exp)
-  (hes: exps_typing sg ln g' (ren_jctx xi d) false (ren_ty xi r) (ren_ty_exps xi es)
+  (hes: exps_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi es)
           (ren_tys xi (L.map snd lay)))
   (hb: (a: atom{~(L.mem a (rdom g')) /\ ~(L.mem a (frn_exp (ren_ty_exp xi body)))} ->
-        typing sg ln (enter_region g' a (ren_layout xi lay)) (ren_jctx xi []) true
+        typing sg ln (enter_region g' a (ren_layout xi lay)) (ren_jctx xi [])
           (ren_ty_exp xi (open_region a body)) (ren_ty xi t)
           (ren_ty xi (TRowExt (EntRegion (RFree a)) r))))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ERegion lay es body /\
                    check sg g (layout_row lay) (KRow EType) /\ L.noRepeats (L.map fst lay) /\
                    check sg g t KType /\ check sg g r (KRow EEffect))
@@ -870,22 +870,22 @@ let b_region (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   check_ren sg xi g g' (layout_row lay) (KRow EType);
   check_ren sg xi g g' t KType;
   check_ren sg xi g g' r (KRow EEffect);
-  let hes : exps_typing sg ln g' (ren_jctx xi d) false (ren_ty xi r) (ren_ty_exps xi es)
+  let hes : exps_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi es)
     (L.map snd lay') =
     hes in
   let hb' (a: atom{~(L.mem a (rdom g')) /\ ~(L.mem a (frn_exp body'))})
-    : typing sg ln (enter_region g' a lay') [] true (open_region a body') (ren_ty xi t)
+    : typing sg ln (enter_region g' a lay') [] (open_region a body') (ren_ty xi t)
         (TRowExt (EntRegion (RFree a)) (ren_ty xi r)) =
     open_region_ren_ty_exp 0 a xi body;
     hb a
   in
-  T_Region #sg #ln #g' #(ren_jctx xi d) #tl #lay' #(ren_ty_exps xi es) #body' #(ren_ty xi t)
+  T_Region #sg #ln #g' #(ren_jctx xi d) #lay' #(ren_ty_exps xi es) #body' #(ren_ty xi t)
     #(ren_ty xi r)
     () () hes hb'
 
-let b_readcell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_readcell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (a: atom) (k: key) (lay: layout)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EReadCell (RFree a) k /\
              L.assoc a g.regions == Some lay /\
                    L.assoc k lay == Some t /\ L.mem (RegionKey (RFree a)) (known_keys r) /\
@@ -895,15 +895,15 @@ let b_readcell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool)
   ren_layout_assoc xi lay k;
   known_keys_ren xi r (RegionKey (RFree a));
   check_ren sg xi g g' r (KRow EEffect);
-  T_ReadCell #sg #ln #g' #(ren_jctx xi d) #tl #a #k #(ren_layout xi lay) #(ren_ty xi t)
+  T_ReadCell #sg #ln #g' #(ren_jctx xi d) #a #k #(ren_layout xi lay) #(ren_ty xi t)
     #(ren_ty xi r)
     () () ()
 
-let b_writecell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp)
+let b_writecell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp)
   (t r: typ)
   (a: atom) (k: key) (e1: exp) (lay: layout) (t1: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi t1) (ren_ty xi r))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EWriteCell (RFree a) k e1 /\ t == t_unit /\
                    L.assoc a g.regions == Some lay /\ L.assoc k lay == Some t1 /\
                    L.mem (RegionKey (RFree a)) (known_keys r))
@@ -912,26 +912,26 @@ let b_writecell (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool
   assert (L.assoc a g.regions == L.assoc a g.regions);
   ren_layout_assoc xi lay k;
   known_keys_ren xi r (RegionKey (RFree a));
-  T_WriteCell #sg #ln #g' #(ren_jctx xi d) #tl #a #k #(ren_ty_exp xi e1) #(ren_layout xi lay)
+  T_WriteCell #sg #ln #g' #(ren_jctx xi d) #a #k #(ren_ty_exp xi e1) #(ren_layout xi lay)
     #(ren_ty xi t1) #(ren_ty xi r) () () h1
 
-let b_match (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_match (#sg: sig) (#ln: lctx) (xi: ren) (g': ctx) (d: jctx) (e: exp) (t r: typ)
   (th: list exp) (dt: dtree) (ts: list typ) (om: octx)
-  (hes: exps_typing sg ln g' (ren_jctx xi d) false (ren_ty xi r) (ren_ty_exps xi th)
+  (hes: exps_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi th)
       (ren_tys xi ts))
-  (hm: match_typing sg ln g' (ren_jctx xi d) (ren_ty xi r) (ren_ty_exps xi th) (ren_octx xi om))
-  (hdt: dt_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi om) (ren_ty_dt xi dt) (ren_ty xi t)
+  (hm: match_typing sg ln g' [] (ren_ty xi r) (ren_ty_exps xi th) (ren_octx xi om))
+  (hdt: dt_typing sg ln g' (ren_jctx xi d) (ren_octx xi om) (ren_ty_dt xi dt) (ren_ty xi t)
           (ren_ty xi r))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires e == EMatch th dt /\ L.for_all (V.is_value sg) th)
          (ensures fun _ -> True) =
   values_ren_ty sg xi th;
   T_Match (ren_octx xi om) hes () hm hdt
 
-let b_openeffc (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_openeffc (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (r2: typ) (e1: exp) (r0: typ)
-  (h1: typing sg ln g' (ren_jctx xi d) false (ren_ty_exp xi e1) (ren_ty xi t) (ren_ty xi r0))
-  : Pure (tr sg ln g' xi d tl e t r)
+  (h1: typing sg ln g' [] (ren_ty_exp xi e1) (ren_ty xi t) (ren_ty xi r0))
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EOpenEffC r2 e1 /\ r == TRowUnion r0 r2 /\
                    entails (hyps g) (CDisj r0 r2) /\ check sg g r2 (KRow EEffect))
          (ensures fun _ -> True) =
@@ -939,38 +939,38 @@ let b_openeffc (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool)
   ren_openeffc_eq xi r2 e1;
   entails_into xi g g' (CDisj r0 r2);
   check_ren sg xi g g' r2 (KRow EEffect);
-  T_OpenEffC #sg #ln #g' #(ren_jctx xi d) #tl #(ren_ty xi r2) h1 ()
+  T_OpenEffC #sg #ln #g' #(ren_jctx xi d) #(ren_ty xi r2) h1 ()
 
-let b_force (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_force (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (nu: atom)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EForce nu /\ L.nth ln nu == Some t /\
                    check sg (closed_ctx g.regions) t KType /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   closed_ren sg xi g g' t KType;
   check_ren sg xi g g' r (KRow EEffect);
-  T_Force #sg #ln #g' #(ren_jctx xi d) #tl #nu #t #(ren_ty xi r) () ()
+  T_Force #sg #ln #g' #(ren_jctx xi d) #nu #t #(ren_ty xi r) () ()
 
-let b_fill (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_fill (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (nu: atom) (e1: exp)
-  (h1: typing sg ln g' (ren_jctx xi []) false (ren_ty_exp xi e1) (ren_ty xi t)
+  (h1: typing sg ln g' (ren_jctx xi []) (ren_ty_exp xi e1) (ren_ty xi t)
       (ren_ty xi TRowEmpty))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EFill nu e1 /\ L.nth ln nu == Some t /\
                    check sg (closed_ctx g.regions) t KType /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True) =
   closed_ren sg xi g g' t KType;
   check_ren sg xi g g' r (KRow EEffect);
-  let h1 : typing sg ln g' [] false (ren_ty_exp xi e1) t TRowEmpty = h1 in
-  T_Fill #sg #ln #g' #(ren_jctx xi d) #tl #nu #(ren_ty_exp xi e1) #t #(ren_ty xi r) () () h1
+  let h1 : typing sg ln g' [] (ren_ty_exp xi e1) t TRowEmpty = h1 in
+  T_Fill #sg #ln #g' #(ren_jctx xi d) #nu #(ren_ty_exp xi e1) #t #(ren_ty xi r) () () h1
 
-let b_region_open (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp)
+let b_region_open (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp)
   (t r: typ)
   (a: atom) (cells: list (key & exp)) (body: exp) (lay: layout)
   (hc: cells_typing sg ln g' (ren_ty_cells xi cells) (ren_layout xi lay))
-  (hb: typing sg ln g' (ren_jctx xi []) true (ren_ty_exp xi body) (ren_ty xi t)
+  (hb: typing sg ln g' (ren_jctx xi []) (ren_ty_exp xi body) (ren_ty xi t)
          (ren_ty xi (TRowExt (EntRegion (RFree a)) r)))
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == ERegionOpen a cells body /\
              L.assoc a g.regions == Some lay /\
                    check sg (closed_ctx g.regions) t KType /\
@@ -980,13 +980,13 @@ let b_region_open (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bo
   assert (L.assoc a g.regions == L.assoc a g.regions);
   closed_ren sg xi g g' t KType;
   closed_ren sg xi g g' r (KRow EEffect);
-  let hb : typing sg ln g' [] true (ren_ty_exp xi body) t (TRowExt (EntRegion (RFree a)) r) = hb in
-  T_RegionOpen #sg #ln #g' #(ren_jctx xi d) #tl #a #(ren_ty_cells xi cells) #(ren_ty_exp xi body)
+  let hb : typing sg ln g' [] (ren_ty_exp xi body) t (TRowExt (EntRegion (RFree a)) r) = hb in
+  T_RegionOpen #sg #ln #g' #(ren_jctx xi d) #a #(ren_ty_cells xi cells) #(ren_ty_exp xi body)
     #(ren_layout xi lay) #t #r () () () hc hb
 
-let b_opaque (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (e: exp) (t r: typ)
+let b_opaque (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (e: exp) (t r: typ)
   (w: nat)
-  : Pure (tr sg ln g' xi d tl e t r)
+  : Pure (tr sg ln g' xi d e t r)
          (requires ty_ren_ok xi g g' /\ e == EOpaque w t /\ opaque_type sg t /\ check sg g t KType
              /\
                    check sg g r (KRow EEffect))
@@ -994,115 +994,115 @@ let b_opaque (#sg: sig) (#ln: lctx) (xi: ren) (g g': ctx) (d: jctx) (tl: bool) (
   ty_head_ren xi t;
   check_ren sg xi g g' t KType;
   check_ren sg xi g g' r (KRow EEffect);
-  T_Opaque #sg #ln #g' #(ren_jctx xi d) #tl #w #(ren_ty xi t) #(ren_ty xi r) () ()
+  T_Opaque #sg #ln #g' #(ren_jctx xi d) #w #(ren_ty xi t) #(ren_ty xi r) () ()
 
 (* The mutual induction. *)
 
-let rec typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r) (xi: ren) (g': ctx)
-  : Pure (typing sg ln g' (ren_jctx xi d) tl (ren_ty_exp xi e) (ren_ty xi t) (ren_ty xi r))
+let rec typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r) (xi: ren) (g': ctx)
+  : Pure (typing sg ln g' (ren_jctx xi d) (ren_ty_exp xi e) (ren_ty xi t) (ren_ty xi r))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
   match h with
-  | T_Var #_ #_ #_ #_ #_ #i _ _ -> b_var xi g g' d tl e t r i
-  | T_Global #_ #_ #_ #_ #_ #q #ks #nk #t0 _ _ _ -> b_global xi g g' d tl e t r q ks nk t0
-  | T_Lit #_ #_ #_ #_ #_ #c _ -> b_lit xi g g' d tl e t r c
-  | T_Lam #_ #_ #_ #_ #_ #t1 #r1 #body #t2 _ _ hb ->
+  | T_Var #_ #_ #_ #_ #i _ _ -> b_var xi g g' d e t r i
+  | T_Global #_ #_ #_ #_ #q #ks #nk #t0 _ _ _ -> b_global xi g g' d e t r q ks nk t0
+  | T_Lit #_ #_ #_ #_ #c _ -> b_lit xi g g' d e t r c
+  | T_Lam #_ #_ #_ #_ #t1 #r1 #body #t2 _ _ hb ->
     ty_ren_ok_push_var xi g g' t1;
-    b_lam xi g g' d tl e t r t1 r1 body t2 (typing_ren_ty' hb xi (push_var g' (ren_ty xi t1)))
-  | T_App #_ #_ #_ #_ #_ #e1 #e2 #t1 #t2 h1 h2 ->
-    b_app xi g' d tl e t r e1 e2 t1 t2 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
-  | T_Chain #_ #_ #_ #_ #_ #_ #t0 #th hc _ ->
-    b_chain xi g' d tl e t r t0 th (chain_typing_ren_ty' hc xi g')
-  | T_TyLam #_ #_ #_ #_ #_ #k #body #t0 _ _ _ hb ->
+    b_lam xi g g' d e t r t1 r1 body t2 (typing_ren_ty' hb xi (push_var g' (ren_ty xi t1)))
+  | T_App #_ #_ #_ #_ #e1 #e2 #t1 #t2 h1 h2 ->
+    b_app xi g' d e t r e1 e2 t1 t2 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
+  | T_Chain #_ #_ #_ #_ #_ #t0 #th hc _ ->
+    b_chain xi g' d e t r t0 th (chain_typing_ren_ty' hc xi g')
+  | T_TyLam #_ #_ #_ #_ #k #body #t0 _ _ _ hb ->
     ty_ren_ok_up xi g g' k;
-    b_tylam xi g g' d tl e t r k body t0 (typing_ren_ty' hb (up_ren xi) (push_tvar g' k))
-  | T_TyApp #_ #_ #_ #_ #_ #e1 #s #k #t0 h1 _ ->
-    b_tyapp xi g g' d tl e t r e1 s k t0 (typing_ren_ty' h1 xi g')
-  | T_CLam #_ #_ #_ #_ #_ #c #body #t0 _ _ _ hb ->
+    b_tylam xi g g' d e t r k body t0 (typing_ren_ty' hb (up_ren xi) (push_tvar g' k))
+  | T_TyApp #_ #_ #_ #_ #e1 #s #k #t0 h1 _ ->
+    b_tyapp xi g g' d e t r e1 s k t0 (typing_ren_ty' h1 xi g')
+  | T_CLam #_ #_ #_ #_ #c #body #t0 _ _ _ hb ->
     ty_ren_ok_assump xi g g' c;
-    b_clam xi g g' d tl e t r c body t0 (typing_ren_ty' hb xi (add_assump g' (ren_constr xi c)))
-  | T_CApp #_ #_ #_ #_ #_ #e1 #c h1 _ ->
-    b_capp xi g g' d tl e t r e1 c (typing_ren_ty' h1 xi g')
-  | T_Let #_ #_ #_ #_ #_ #t1 #e1 #e2 _ h1 h2 ->
+    b_clam xi g g' d e t r c body t0 (typing_ren_ty' hb xi (add_assump g' (ren_constr xi c)))
+  | T_CApp #_ #_ #_ #_ #e1 #c h1 _ ->
+    b_capp xi g g' d e t r e1 c (typing_ren_ty' h1 xi g')
+  | T_Let #_ #_ #_ #_ #t1 #e1 #e2 _ h1 h2 ->
     ty_ren_ok_push_var xi g g' t1;
-    b_let xi g g' d tl e t r t1 e1 e2 (typing_ren_ty' h1 xi g')
+    b_let xi g g' d e t r t1 e1 e2 (typing_ren_ty' h1 xi g')
       (typing_ren_ty' h2 xi (push_var g' (ren_ty xi t1)))
-  | T_LetRec #_ #_ #_ #_ #_ #bs #body _ hbs hb ->
+  | T_LetRec #_ #_ #_ #_ #bs #body _ hbs hb ->
     ty_ren_ok_push_vars xi g g' (L.map fst bs);
     let gb' = push_vars g' (ren_tys xi (L.map fst bs)) in
-    b_letrec xi g' d tl e t r bs body (binds_typing_ren_ty' hbs xi gb') (typing_ren_ty' hb xi gb')
-  | T_Conv #_ #_ #_ #_ #_ #_ #t1 #r1 h1 _ _ ->
-    b_conv xi g g' d tl e t r t1 r1 (typing_ren_ty' h1 xi g')
-  | T_Case #_ #_ #_ #_ #_ #es #dt #ts hes hdt ->
-    b_case xi g' d tl e t r es dt ts (exps_typing_ren_ty' hes xi g') (dt_typing_ren_ty' hdt xi g')
-  | T_LetJoin #_ #_ #_ #_ #_ #ts #_ #e1 #e2 _ h1 h2 ->
+    b_letrec xi g' d e t r bs body (binds_typing_ren_ty' hbs xi gb') (typing_ren_ty' hb xi gb')
+  | T_Conv #_ #_ #_ #_ #_ #t1 #r1 h1 _ _ ->
+    b_conv xi g g' d e t r t1 r1 (typing_ren_ty' h1 xi g')
+  | T_Case #_ #_ #_ #_ #es #dt #ts hes hdt ->
+    b_case xi g' d e t r es dt ts (exps_typing_ren_ty' hes xi g') (dt_typing_ren_ty' hdt xi g')
+  | T_LetJoin #_ #_ #_ #_ #ts #_ #e1 #e2 _ h1 h2 ->
     ty_ren_ok_push_vars xi g g' ts;
-    b_letjoin xi g g' d tl e t r ts e1 e2 (typing_ren_ty' h1 xi (push_vars g' (ren_tys xi ts)))
+    b_letjoin xi g g' d e t r ts e1 e2 (typing_ren_ty' h1 xi (push_vars g' (ren_tys xi ts)))
       (typing_ren_ty' h2 xi g')
   | T_Jump #_ #_ #_ #_ #j #es #ts _ _ hes ->
-    b_jump xi g g' d tl e t r j es ts (exps_typing_ren_ty' hes xi g')
-  | T_RecEmpty _ -> b_recempty xi g g' d tl e t r
-  | T_Extend #_ #_ #_ #_ #_ #k #e1 #e2 #t1 #r0 h1 h2 _ ->
-    b_extend xi g g' d tl e t r k e1 e2 t1 r0 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
-  | T_Select #_ #_ #_ #_ #_ #k #e1 #_ #r0 h1 _ ->
-    b_select xi g g' d tl e t r k e1 r0 (typing_ren_ty' h1 xi g')
-  | T_Restrict #_ #_ #_ #_ #_ #k #e1 #t1 #r0 h1 _ ->
-    b_restrict xi g g' d tl e t r k e1 t1 r0 (typing_ren_ty' h1 xi g')
-  | T_Update #_ #_ #_ #_ #_ #k #e1 #e2 #t1 #t2 #r0 h1 h2 _ ->
-    b_update xi g g' d tl e t r k e1 e2 t1 t2 r0 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
-  | T_Merge #_ #_ #_ #_ #_ #e1 #e2 #r1 #r2 h1 h2 _ ->
-    b_merge xi g g' d tl e t r e1 e2 r1 r2 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
-  | T_Inject #_ #_ #_ #_ #_ #k #r0 #e1 #t1 h1 _ _ ->
-    b_inject xi g g' d tl e t r k r0 e1 t1 (typing_ren_ty' h1 xi g')
-  | T_Weaken #_ #_ #_ #_ #_ #k #t1 #e1 #r0 h1 _ _ ->
-    b_weaken xi g g' d tl e t r k t1 e1 r0 (typing_ren_ty' h1 xi g')
-  | T_VariantValue #_ #_ #_ #_ #_ #_ #k #v #pt vr0 vr h1 _ h2 _ ->
-    b_variant_value xi g g' d tl e t r k v pt vr0 vr (typing_ren_ty' h1 xi g')
+    b_jump xi g g' d e t r j es ts (exps_typing_ren_ty' hes xi g')
+  | T_RecEmpty _ -> b_recempty xi g g' d e t r
+  | T_Extend #_ #_ #_ #_ #k #e1 #e2 #t1 #r0 h1 h2 _ ->
+    b_extend xi g g' d e t r k e1 e2 t1 r0 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
+  | T_Select #_ #_ #_ #_ #k #e1 #_ #r0 h1 _ ->
+    b_select xi g g' d e t r k e1 r0 (typing_ren_ty' h1 xi g')
+  | T_Restrict #_ #_ #_ #_ #k #e1 #t1 #r0 h1 _ ->
+    b_restrict xi g g' d e t r k e1 t1 r0 (typing_ren_ty' h1 xi g')
+  | T_Update #_ #_ #_ #_ #k #e1 #e2 #t1 #t2 #r0 h1 h2 _ ->
+    b_update xi g g' d e t r k e1 e2 t1 t2 r0 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
+  | T_Merge #_ #_ #_ #_ #e1 #e2 #r1 #r2 h1 h2 _ ->
+    b_merge xi g g' d e t r e1 e2 r1 r2 (typing_ren_ty' h1 xi g') (typing_ren_ty' h2 xi g')
+  | T_Inject #_ #_ #_ #_ #k #r0 #e1 #t1 h1 _ _ ->
+    b_inject xi g g' d e t r k r0 e1 t1 (typing_ren_ty' h1 xi g')
+  | T_Weaken #_ #_ #_ #_ #k #t1 #e1 #r0 h1 _ _ ->
+    b_weaken xi g g' d e t r k t1 e1 r0 (typing_ren_ty' h1 xi g')
+  | T_VariantValue #_ #_ #_ #_ #_ #k #v #pt vr0 vr h1 _ h2 _ ->
+    b_variant_value xi g g' d e t r k v pt vr0 vr (typing_ren_ty' h1 xi g')
       (typing_ren_ty' h2 xi g')
-  | T_Absurd #_ #_ #_ #_ #_ #_ #e1 h1 _ ->
-    b_absurd xi g g' d tl e t r e1 (typing_ren_ty' h1 xi g')
-  | T_Perform #_ #_ #_ #_ #_ #k #op #ss #e1 #_ #q #ei #os ts _ _ _ h1 ->
-    b_perform xi g g' d tl e t r k op ss e1 q ei os ts (typing_ren_ty' h1 xi g')
-  | T_Handle #_ #_ #_ #_ #_ #e1 #hd #_ #_ #lbl #q #ts #ei _ _ _ _ h1 h2 hcl ->
+  | T_Absurd #_ #_ #_ #_ #_ #e1 h1 _ ->
+    b_absurd xi g g' d e t r e1 (typing_ren_ty' h1 xi g')
+  | T_Perform #_ #_ #_ #_ #k #op #ss #e1 #_ #q #ei #os ts _ _ _ h1 ->
+    b_perform xi g g' d e t r k op ss e1 q ei os ts (typing_ren_ty' h1 xi g')
+  | T_Handle #_ #_ #_ #_ #e1 #hd #_ #_ #lbl #q #ts #ei _ _ _ _ h1 h2 hcl ->
     eff_params_length sg g lbl q ts r ei;
     ty_ren_ok_push_var xi g g' hd.h_ret_ty;
-    b_handle xi g g' d tl e t r e1 hd lbl q ts ei (typing_ren_ty' h1 xi g')
+    b_handle xi g g' d e t r e1 hd lbl q ts ei (typing_ren_ty' h1 xi g')
       (typing_ren_ty' h2 xi (push_var g' (ren_ty xi hd.h_ret_ty)))
         (clauses_typing_ren_ty' hcl q xi g')
-  | T_OpenEff #_ #_ #_ #_ #_ #r2 #e1 #t1 #r1 #t2 h1 _ ->
-    b_openeff xi g g' d tl e t r r2 e1 t1 r1 t2 (typing_ren_ty' h1 xi g')
-  | T_Region #_ #_ #_ #_ #_ #lay #es #body _ _ hes hbody ->
+  | T_OpenEff #_ #_ #_ #_ #r2 #e1 #t1 #r1 #t2 h1 _ ->
+    b_openeff xi g g' d e t r r2 e1 t1 r1 t2 (typing_ren_ty' h1 xi g')
+  | T_Region #_ #_ #_ #_ #lay #es #body _ _ hes hbody ->
     let lay' = ren_layout xi lay in
     let hb' (a: atom{~(L.mem a (rdom g')) /\ ~(L.mem a (frn_exp (ren_ty_exp xi body)))})
-      : typing sg ln (enter_region g' a lay') (ren_jctx xi []) true
+      : typing sg ln (enter_region g' a lay') (ren_jctx xi [])
         (ren_ty_exp xi (open_region a body))
           (ren_ty xi t) (ren_ty xi (TRowExt (EntRegion (RFree a)) r)) =
       ty_ren_ok_fresh xi g g' a body;
       ty_ren_ok_enter_region xi g g' a lay;
       typing_ren_ty' (hbody a) xi (enter_region g' a lay')
     in
-    b_region xi g g' d tl e t r lay es body (exps_typing_ren_ty' hes xi g') hb'
-  | T_ReadCell #_ #_ #_ #_ #_ #a #k #lay _ _ _ -> b_readcell xi g g' d tl e t r a k lay
-  | T_WriteCell #_ #_ #_ #_ #_ #a #k #e1 #lay #t1 _ _ h1 ->
-    b_writecell xi g g' d tl e t r a k e1 lay t1 (typing_ren_ty' h1 xi g')
-  | T_Match #_ #_ #_ #_ #_ #th #dt #ts om hes _ hm hdt ->
-    b_match xi g' d tl e t r th dt ts om (exps_typing_ren_ty' hes xi g')
+    b_region xi g g' d e t r lay es body (exps_typing_ren_ty' hes xi g') hb'
+  | T_ReadCell #_ #_ #_ #_ #a #k #lay _ _ _ -> b_readcell xi g g' d e t r a k lay
+  | T_WriteCell #_ #_ #_ #_ #a #k #e1 #lay #t1 _ _ h1 ->
+    b_writecell xi g g' d e t r a k e1 lay t1 (typing_ren_ty' h1 xi g')
+  | T_Match #_ #_ #_ #_ #th #dt #ts om hes _ hm hdt ->
+    b_match xi g' d e t r th dt ts om (exps_typing_ren_ty' hes xi g')
       (match_typing_ren_ty' hm xi g')
       (dt_typing_ren_ty' hdt xi g')
-  | T_OpenEffC #_ #_ #_ #_ #_ #r2 #e1 #_ #r0 h1 _ ->
-    b_openeffc xi g g' d tl e t r r2 e1 r0 (typing_ren_ty' h1 xi g')
-  | T_Force #_ #_ #_ #_ #_ #nu _ _ -> b_force xi g g' d tl e t r nu
-  | T_Fill #_ #_ #_ #_ #_ #nu #e1 _ _ h1
-    -> b_fill xi g g' d tl e t r nu e1 (typing_ren_ty' h1 xi g')
-  | T_RegionOpen #_ #_ #_ #_ #_ #a #cells #body #lay _ _ _ hc hb ->
-    b_region_open xi g g' d tl e t r a cells body lay (cells_typing_ren_ty' hc xi g')
+  | T_OpenEffC #_ #_ #_ #_ #r2 #e1 #_ #r0 h1 _ ->
+    b_openeffc xi g g' d e t r r2 e1 r0 (typing_ren_ty' h1 xi g')
+  | T_Force #_ #_ #_ #_ #nu _ _ -> b_force xi g g' d e t r nu
+  | T_Fill #_ #_ #_ #_ #nu #e1 _ _ h1
+    -> b_fill xi g g' d e t r nu e1 (typing_ren_ty' h1 xi g')
+  | T_RegionOpen #_ #_ #_ #_ #a #cells #body #lay _ _ _ hc hb ->
+    b_region_open xi g g' d e t r a cells body lay (cells_typing_ren_ty' hc xi g')
       (typing_ren_ty' hb xi g')
-  | T_Opaque #_ #_ #_ #_ #_ #w _ _ -> b_opaque xi g g' d tl e t r w
+  | T_Opaque #_ #_ #_ #_ #w _ _ -> b_opaque xi g g' d e t r w
 
-and exps_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (xi: ren) (g': ctx)
-  : Pure (exps_typing sg ln g' (ren_jctx xi d) tl (ren_ty xi r) (ren_ty_exps xi es) (ren_tys xi ts))
+and exps_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (xi: ren) (g': ctx)
+  : Pure (exps_typing sg ln g' (ren_jctx xi d) (ren_ty xi r) (ren_ty_exps xi es) (ren_tys xi ts))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
   match h with
@@ -1181,37 +1181,37 @@ and match_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (
       #(ren_octx xi _) #(ren_ty_exp xi v) () (typing_ren_ty' h1 xi g')
         (match_typing_ren_ty' h2 xi g')
 
-and dt_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
-  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d tl om dt t r) (xi: ren) (g': ctx)
-  : Pure (dt_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi om) (ren_ty_dt xi dt) (ren_ty xi t)
+and dt_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (xi: ren) (g': ctx)
+  : Pure (dt_typing sg ln g' (ren_jctx xi d) (ren_octx xi om) (ren_ty_dt xi dt) (ren_ty xi t)
             (ren_ty xi r))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TD_Leaf h1 -> TD_Leaf (typing_ren_ty' h1 xi g')
-  | TD_Bind #_ #_ #_ #_ #_ #_ #o #dt0 #t_o #_ #_ ho hdt ->
+  | TD_Bind #_ #_ #_ #_ #_ #o #dt0 #t_o #_ #_ ho hdt ->
     ty_ren_ok_push_var xi g g' t_o;
     TD_Bind (occ_typing_ren_ty' ho xi g') (dt_typing_ren_ty' hdt xi (push_var g' (ren_ty xi t_o)))
-  | TD_SwitchCtor #_ #_ #_ #_ #_ #_ #o #bs #t_o #_ #_ tq ks ss cs ho _ _ _ hbr ->
+  | TD_SwitchCtor #_ #_ #_ #_ #_ #o #bs #t_o #_ #_ tq ks ss cs ho _ _ _ hbr ->
     ren_tapps xi (TCon tq ks) ss;
     ty_eq_ren xi t_o (tapps (TCon tq ks) ss);
     check_ren sg xi g g' (tapps (TCon tq ks) ss) KType;
     ren_ty_brs_labels xi bs;
     TD_SwitchCtor tq ks (ren_tys xi ss) cs (occ_typing_ren_ty' ho xi g') () () ()
       (ctor_brs_typing_ren_ty' hbr xi g')
-  | TD_SwitchCtorDef #_ #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ tq ks ss cs ho _ _ _ hbr hdf ->
+  | TD_SwitchCtorDef #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ tq ks ss cs ho _ _ _ hbr hdf ->
     ren_tapps xi (TCon tq ks) ss;
     ty_eq_ren xi t_o (tapps (TCon tq ks) ss);
     check_ren sg xi g g' (tapps (TCon tq ks) ss) KType;
     ren_ty_brs_labels xi bs;
     TD_SwitchCtorDef tq ks (ren_tys xi ss) cs (occ_typing_ren_ty' ho xi g') () () ()
       (ctor_brs_typing_ren_ty' hbr xi g') (dt_typing_ren_ty' hdf xi g')
-  | TD_SwitchLit #_ #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ lq ho _ _ hbr hdf ->
+  | TD_SwitchLit #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ lq ho _ _ hbr hdf ->
     ty_eq_ren xi t_o (TCon lq []);
     ren_ty_brs_labels xi bs;
     let hbr' = lit_brs_typing_ren_ty' hbr xi g' in
     TD_SwitchLit lq (occ_typing_ren_ty' ho xi g') () () hbr' (dt_typing_ren_ty' hdf xi g')
-  | TD_SwitchKey #_ #_ #_ #_ #_ #_ #o #bs #t_o #_ #_ vr kts ho _ _ _ hbr ->
+  | TD_SwitchKey #_ #_ #_ #_ #_ #o #bs #t_o #_ #_ vr kts ho _ _ _ hbr ->
     ren_t_variant xi vr;
     ty_eq_ren xi t_o (t_variant vr);
     check_ren sg xi g g' vr (KRow EType);
@@ -1219,7 +1219,7 @@ and dt_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#
     key_split_ren xi vr kts TRowEmpty;
     TD_SwitchKey (ren_ty xi vr) (ren_layout xi kts) (occ_typing_ren_ty' ho xi g') () () ()
       (key_brs_typing_ren_ty' hbr xi g')
-  | TD_SwitchKeyDef #_ #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ vr vr' kts ho _ _ _ hbr hdf ->
+  | TD_SwitchKeyDef #_ #_ #_ #_ #_ #o #bs #df #t_o #_ #_ vr vr' kts ho _ _ _ hbr hdf ->
     ren_t_variant xi vr;
     ren_t_variant xi vr';
     ty_eq_ren xi t_o (t_variant vr);
@@ -1235,10 +1235,10 @@ and dt_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#
   | TD_Guard h1 h2 h3 ->
     TD_Guard (typing_ren_ty' h1 xi g') (dt_typing_ren_ty' h2 xi g') (dt_typing_ren_ty' h3 xi g')
 
-and ctor_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+and ctor_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree))
-  (#t #r: typ) (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r) (xi: ren) (g': ctx)
-  : Pure (ctor_brs_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi om) o ks (ren_tys xi ss) cs
+  (#t #r: typ) (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r) (xi: ren) (g': ctx)
+  : Pure (ctor_brs_typing sg ln g' (ren_jctx xi d) (ren_octx xi om) o ks (ren_tys xi ss) cs
             (ren_ty_brs xi bs) (ren_ty xi t) (ren_ty xi r))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
@@ -1246,21 +1246,21 @@ and ctor_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bo
   | TCB_Nil _ ->
     check_ren sg xi g g' t KType; check_ren sg xi g g' r (KRow EEffect);
     TCB_Nil ()
-  | TCB_Cons #_ #_ #_ #_ #_ #_ #_ #_ #_ #_ #c #dt0 #bs0 #_ #_ #fs _ hdt h2 ->
+  | TCB_Cons #_ #_ #_ #_ #_ #_ #_ #_ #_ #c #dt0 #bs0 #_ #_ #fs _ hdt h2 ->
     ctor_fields_ren sg c ks ss xi;
     field_occs_ren xi o c 0 fs;
     ren_octx_append xi (field_occs o c 0 fs) om;
     let hdt' = cast_dt (dt_typing_ren_ty' hdt xi g')
                  (L.append (field_occs o c 0 (ren_tys xi fs)) (ren_octx xi om)) (ren_ty xi t)
                    (ren_ty xi r) in
-    TCB_Cons #sg #ln #g' #(ren_jctx xi d) #tl #(ren_octx xi om) #o #ks #(ren_tys xi ss) #cs #c
+    TCB_Cons #sg #ln #g' #(ren_jctx xi d) #(ren_octx xi om) #o #ks #(ren_tys xi ss) #cs #c
       #(ren_ty_dt xi dt0) #(ren_ty_brs xi bs0) #(ren_ty xi t) #(ren_ty xi r) #(ren_tys xi fs)
       () hdt' (ctor_brs_typing_ren_ty' h2 xi g')
 
-and lit_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+and lit_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ)
-  (h: lit_brs_typing sg ln g d tl om lt bs t r) (xi: ren) (g': ctx)
-  : Pure (lit_brs_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi om) (ren_ty xi lt)
+  (h: lit_brs_typing sg ln g d om lt bs t r) (xi: ren) (g': ctx)
+  : Pure (lit_brs_typing sg ln g' (ren_jctx xi d) (ren_octx xi om) (ren_ty xi lt)
             (ren_ty_brs xi bs) (ren_ty xi t) (ren_ty xi r))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
@@ -1268,16 +1268,16 @@ and lit_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: boo
   | TLB_Nil _ ->
     check_ren sg xi g g' t KType; check_ren sg xi g g' r (KRow EEffect);
     TLB_Nil ()
-  | TLB_Cons #_ #_ #_ #_ #_ #_ #_ #c #_ #_ #_ #_ _ hdt h2 ->
+  | TLB_Cons #_ #_ #_ #_ #_ #_ #c #_ #_ #_ #_ _ hdt h2 ->
     ren_lit_type xi c;
     ty_eq_ren xi (lit_type c) lt;
-    TLB_Cons #sg #ln #g' #(ren_jctx xi d) #tl #(ren_octx xi om) #(ren_ty xi lt) #c ()
+    TLB_Cons #sg #ln #g' #(ren_jctx xi d) #(ren_octx xi om) #(ren_ty xi lt) #c ()
       (dt_typing_ren_ty' hdt xi g') (lit_brs_typing_ren_ty' h2 xi g')
 
-and key_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+and key_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r) (xi: ren) (g': ctx)
-  : Pure (key_brs_typing sg ln g' (ren_jctx xi d) tl (ren_octx xi om) o (ren_layout xi kts)
+  (h: key_brs_typing sg ln g d om o kts bs t r) (xi: ren) (g': ctx)
+  : Pure (key_brs_typing sg ln g' (ren_jctx xi d) (ren_octx xi om) o (ren_layout xi kts)
             (ren_ty_brs xi bs) (ren_ty xi t) (ren_ty xi r))
          (requires sig_ok sg /\ ty_ren_ok xi g g')
          (ensures fun _ -> True) (decreases h) =
@@ -1285,7 +1285,7 @@ and key_brs_typing_ren_ty' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: boo
   | TKB_Nil _ ->
     check_ren sg xi g g' t KType; check_ren sg xi g g' r (KRow EEffect);
     TKB_Nil ()
-  | TKB_Cons #_ #_ #_ #_ #_ #_ #_ #k #pt #_ #_ #_ #_ #_ _ hdt h2 ->
+  | TKB_Cons #_ #_ #_ #_ #_ #_ #k #pt #_ #_ #_ #_ #_ _ hdt h2 ->
     check_ren sg xi g g' pt KType;
     TKB_Cons () (dt_typing_ren_ty' hdt xi g') (key_brs_typing_ren_ty' h2 xi g')
 
@@ -1356,9 +1356,9 @@ and occ_typing_ren_ty' (#sg: sig) (#g: ctx) (#om: octx) (#o: occ) (#t: typ)
 
 let occ_typing_ren_ty #sg #g #om #o #t h xi g' = occ_typing_ren_ty' h xi g'
 
-let typing_ren_ty #sg #ln #g #d #tl #e #t #r h xi g' = typing_ren_ty' h xi g'
+let typing_ren_ty #sg #ln #g #d #e #t #r h xi g' = typing_ren_ty' h xi g'
 
-let exps_typing_ren_ty #sg #ln #g #d #tl #r #es #ts h xi g' = exps_typing_ren_ty' h xi g'
+let exps_typing_ren_ty #sg #ln #g #d #r #es #ts h xi g' = exps_typing_ren_ty' h xi g'
 
 let chain_typing_ren_ty #sg #ln #g #d #r #e h xi g' = chain_typing_ren_ty' h xi g'
 
@@ -1368,15 +1368,15 @@ let cells_typing_ren_ty #sg #ln #g #cells #lay h xi g' = cells_typing_ren_ty' h 
 
 let match_typing_ren_ty #sg #ln #g #d #r #th #om h xi g' = match_typing_ren_ty' h xi g'
 
-let dt_typing_ren_ty #sg #ln #g #d #tl #om #dt #t #r h xi g' = dt_typing_ren_ty' h xi g'
+let dt_typing_ren_ty #sg #ln #g #d #om #dt #t #r h xi g' = dt_typing_ren_ty' h xi g'
 
-let ctor_brs_typing_ren_ty #sg #ln #g #d #tl #om #o #ks #ss #cs #bs #t #r h xi g' =
+let ctor_brs_typing_ren_ty #sg #ln #g #d #om #o #ks #ss #cs #bs #t #r h xi g' =
   ctor_brs_typing_ren_ty' h xi g'
 
-let lit_brs_typing_ren_ty #sg #ln #g #d #tl #om #lt #bs #t #r h xi g' =
+let lit_brs_typing_ren_ty #sg #ln #g #d #om #lt #bs #t #r h xi g' =
   lit_brs_typing_ren_ty' h xi g'
 
-let key_brs_typing_ren_ty #sg #ln #g #d #tl #om #o #kts #bs #t #r h xi g' =
+let key_brs_typing_ren_ty #sg #ln #g #d #om #o #kts #bs #t #r h xi g' =
   key_brs_typing_ren_ty' h xi g'
 
 let clauses_typing_ren_ty #sg #ln #g #ei #ts #r #b #cs h q xi g' = clauses_typing_ren_ty' h q xi g'

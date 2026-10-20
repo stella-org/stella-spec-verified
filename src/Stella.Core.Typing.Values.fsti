@@ -2,10 +2,10 @@
  * Ambient independence of values (spec 05 §Basic rules; spec 06 §Values).
  *
  * A run-time value (`Stella.Core.Value.is_value`) performs no effect and
- * jumps nowhere: wherever it is typed, it has the same type at every
- * well-kinded ambient row, under every `Δ`, in and out of tail position
- * (`value_typing`). The rule that types a value form checks the ambient
- * row and reads it nowhere else; its subterms are values again, and
+ * jumps nowhere: wherever it is typed, it has the same type under every
+ * `Δ` and at every well-kinded ambient row (`value_typing`). The rule
+ * that types a value form checks the ambient row and reads it nowhere
+ * else, and reads `Δ` nowhere; its subterms are values again, and
  * `T_Conv` and `T_VariantValue` keep the term. A chain derived by the
  * ordinary application rules, in which the arrow's row is the ambient
  * row, is first re-derived by `chain_typing`
@@ -27,10 +27,10 @@ open Stella.Core.Typing
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 
-(** A typed value has its type at every kinded row, `Δ` and tail flag. *)
-val value_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp) (#t #r: typ)
-  (h: typing sg ln g d tl v t r) (d': jctx) (tl': bool) (r': typ)
-  : Pure (typing sg ln g d' tl' v t r')
+(** A typed value has its type under every `Δ` and at every kinded row. *)
+val value_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp) (#t #r: typ)
+  (h: typing sg ln g d v t r) (d': jctx) (r': typ)
+  : Pure (typing sg ln g d' v t r')
          (requires sig_ok sg /\ wf_ctx sg g /\ V.is_value sg v /\ check sg g r' (KRow EEffect))
          (ensures fun _ -> True)
 
@@ -43,9 +43,9 @@ val value_chain_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#e
          (ensures fun _ -> True)
 
 (** A list of values, such as the scrutinee values of a `match`. *)
-val values_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ) (#es: list exp)
-  (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (d': jctx) (tl': bool) (r': typ)
-  : Pure (exps_typing sg ln g d' tl' r' es ts)
+val values_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#es: list exp)
+  (#ts: list typ) (h: exps_typing sg ln g d r es ts) (d': jctx) (r': typ)
+  : Pure (exps_typing sg ln g d' r' es ts)
          (requires sig_ok sg /\ wf_ctx sg g /\ L.for_all (V.is_value sg) es /\
                    check sg g r' (KRow EEffect))
          (ensures fun _ -> True)
@@ -60,7 +60,7 @@ val values_match_typing (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#
          (ensures fun _ -> True)
 
 (** `value_typing` as a statement. *)
-val value_typing_exists (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#v: exp)
-  (#t #r: typ) (h: typing sg ln g d tl v t r) (d': jctx) (tl': bool) (r': typ)
+val value_typing_exists (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
+  (#t #r: typ) (h: typing sg ln g d v t r) (d': jctx) (r': typ)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g /\ V.is_value sg v /\ check sg g r' (KRow EEffect))
-          (ensures exists (h': typing sg ln g d' tl' v t r'). True)
+          (ensures exists (h': typing sg ln g d' v t r'). True)

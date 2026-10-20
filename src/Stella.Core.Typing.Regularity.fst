@@ -156,25 +156,25 @@ let rec binds_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#bs: list (typ &
   | TB_Nil -> ()
   | TB_Cons _ _ h' -> binds_typing_regular' h'
 
-let rec ctor_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool)
+let rec ctor_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx)
   (#om: octx) (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname)
-  (#bs: list (qname & dtree)) (#t #r: typ) (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r)
+  (#bs: list (qname & dtree)) (#t #r: typ) (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r)
   : Lemma (ensures check sg g t KType /\ check sg g r (KRow EEffect)) (decreases h) =
   match h with
   | TCB_Nil _ -> ()
   | TCB_Cons _ _ h' -> ctor_brs_typing_regular' h'
 
-let rec lit_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool)
+let rec lit_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx)
   (#om: octx) (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ)
-  (h: lit_brs_typing sg ln g d tl om lt bs t r)
+  (h: lit_brs_typing sg ln g d om lt bs t r)
   : Lemma (ensures check sg g t KType /\ check sg g r (KRow EEffect)) (decreases h) =
   match h with
   | TLB_Nil _ -> ()
   | TLB_Cons _ _ h' -> lit_brs_typing_regular' h'
 
-let rec key_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool)
+let rec key_brs_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx)
   (#om: octx) (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
   : Lemma (ensures check sg g t KType /\ check sg g r (KRow EEffect)) (decreases h) =
   match h with
   | TKB_Nil _ -> ()
@@ -219,45 +219,45 @@ let chain_args_ok_cursor (sg: sig) (g: ctx) (e: exp)
 
 (* The mutual induction. *)
 
-let rec typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r)
+let rec typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g)
           (ensures check sg g t KType /\ check sg g r (KRow EEffect))
           (decreases h) =
   match h with
-  | T_Var #_ #_ #_ #_ #_ #i _ _ -> tys_ok_nth sg g g.vars i t
-  | T_Global #_ #_ #_ #_ #_ #q #ks #nk #t0 _ _ _ -> check_global_inst sg g q ks nk t0
-  | T_Lit #_ #_ #_ #_ #_ #c _ -> check_lit_type sg g c
-  | T_Lam #_ #_ #_ #_ #_ #t1 #r' #_ #t2 _ _ hb ->
+  | T_Var #_ #_ #_ #_ #i _ _ -> tys_ok_nth sg g g.vars i t
+  | T_Global #_ #_ #_ #_ #q #ks #nk #t0 _ _ _ -> check_global_inst sg g q ks nk t0
+  | T_Lit #_ #_ #_ #_ #c _ -> check_lit_type sg g c
+  | T_Lam #_ #_ #_ #_ #t1 #r' #_ #t2 _ _ hb ->
     wf_ctx_push_var sg g t1;
     typing_regular' hb;
     reg_lam sg g t1 r' t2
-  | T_App #_ #_ #_ #_ #_ #_ #_ #t1 #_ h1 _ ->
+  | T_App #_ #_ #_ #_ #_ #_ #t1 #_ h1 _ ->
     typing_regular' h1;
     reg_app sg g t1 r t
-  | T_Chain #_ #_ #_ #_ #_ #e0 #t0 #th hc _ ->
+  | T_Chain #_ #_ #_ #_ #e0 #t0 #th hc _ ->
     chain_typing_args_ok' hc;
     reg_chain sg g e0 t0 th
-  | T_TyLam #_ #_ #_ #_ #_ #k #_ #t0 _ _ _ hb ->
+  | T_TyLam #_ #_ #_ #_ #k #_ #t0 _ _ _ hb ->
     wf_ctx_push_tvar sg g k;
     typing_regular' hb;
     check_forall sg g k t0
-  | T_TyApp #_ #_ #_ #_ #_ #_ #s #k #t0 h1 _ ->
+  | T_TyApp #_ #_ #_ #_ #_ #s #k #t0 h1 _ ->
     typing_regular' h1;
     reg_tyapp sg g k s t0
-  | T_CLam #_ #_ #_ #_ #_ #c #_ #t0 _ _ _ hb ->
+  | T_CLam #_ #_ #_ #_ #c #_ #t0 _ _ _ hb ->
     wf_ctx_add_assump sg g c;
     typing_regular' hb;
     check_constr sg g c t0
-  | T_CApp #_ #_ #_ #_ #_ #_ #c h1 _ ->
+  | T_CApp #_ #_ #_ #_ #_ #c h1 _ ->
     typing_regular' h1;
     reg_capp sg g c t
-  | T_Let #_ #_ #_ #_ #_ #t1 _ h1 h2 ->
+  | T_Let #_ #_ #_ #_ #t1 _ h1 h2 ->
     wf_ctx_push_var sg g t1;
     typing_regular' h1;
     typing_regular' h2;
     reg_push_var sg g t1 t KType
-  | T_LetRec #_ #_ #_ #_ #_ #bs _ hbs hb ->
+  | T_LetRec #_ #_ #_ #_ #bs _ hbs hb ->
     let ts = L.map fst bs in
     binds_typing_regular' hbs;
     same_kinding_push_vars g ts;
@@ -268,65 +268,65 @@ let rec typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) 
     reg_push_vars sg g ts t KType;
     reg_push_vars sg g ts r (KRow EEffect)
   | T_Conv _ _ _ -> ()
-  | T_Case #_ #_ #_ #_ #_ #_ #_ #ts hes hdt ->
+  | T_Case #_ #_ #_ #_ #_ #_ #ts hes hdt ->
     exps_typing_regular' hes;
     octx_ok_scrut_occs sg g 0 ts;
     dt_typing_regular' hdt
   | T_LetJoin _ _ h2 -> typing_regular' h2
   | T_Jump _ _ _ -> ()
   | T_RecEmpty _ -> check_t_record sg g TRowEmpty
-  | T_Extend #_ #_ #_ #_ #_ #k #_ #_ #t1 #r0 h1 h2 _ ->
+  | T_Extend #_ #_ #_ #_ #k #_ #_ #t1 #r0 h1 h2 _ ->
     typing_regular' h1;
     typing_regular' h2;
     reg_extend sg g k t1 r0
-  | T_Select #_ #_ #_ #_ #_ #k #_ #_ #r0 h1 _ ->
+  | T_Select #_ #_ #_ #_ #k #_ #_ #r0 h1 _ ->
     typing_regular' h1;
     reg_select sg g k t r0
-  | T_Restrict #_ #_ #_ #_ #_ #k #_ #t1 #r0 h1 _ ->
+  | T_Restrict #_ #_ #_ #_ #k #_ #t1 #r0 h1 _ ->
     typing_regular' h1;
     reg_select sg g k t1 r0
-  | T_Update #_ #_ #_ #_ #_ #k #_ #_ #t1 #t' #r0 h1 h2 _ ->
+  | T_Update #_ #_ #_ #_ #k #_ #_ #t1 #t' #r0 h1 h2 _ ->
     typing_regular' h1;
     typing_regular' h2;
     reg_update sg g k t1 t' r0
-  | T_Merge #_ #_ #_ #_ #_ #_ #_ #r1 #r2 h1 h2 _ ->
+  | T_Merge #_ #_ #_ #_ #_ #_ #r1 #r2 h1 h2 _ ->
     typing_regular' h1;
     typing_regular' h2;
     reg_merge sg g r1 r2
-  | T_Inject #_ #_ #_ #_ #_ #k #r0 #_ #t1 h1 _ _ ->
+  | T_Inject #_ #_ #_ #_ #k #r0 #_ #t1 h1 _ _ ->
     typing_regular' h1;
     reg_inject sg g k t1 r0
-  | T_Weaken #_ #_ #_ #_ #_ #k #t1 #_ #r0 h1 _ _ ->
+  | T_Weaken #_ #_ #_ #_ #k #t1 #_ #r0 h1 _ _ ->
     typing_regular' h1;
     reg_weaken sg g k t1 r0
   | T_VariantValue _ _ _ _ h1 _ -> typing_regular' h1
   | T_Absurd h1 _ -> typing_regular' h1; reg_absurd sg g
-  | T_Perform #_ #_ #_ #_ #_ #_ #op #ss #_ #_ #q #ei #os ts _ _ _ h1 ->
+  | T_Perform #_ #_ #_ #_ #_ #op #ss #_ #_ #q #ei #os ts _ _ _ h1 ->
     typing_regular' h1;
     check_op_inst sg g q ei op os ts ss
   | T_Handle _ _ _ _ _ _ _ -> ()
-  | T_OpenEff #_ #_ #_ #_ #_ #r' #_ #t1 #r1 #t2 h1 _ ->
+  | T_OpenEff #_ #_ #_ #_ #r' #_ #t1 #r1 #t2 h1 _ ->
     typing_regular' h1;
     reg_openeff sg g t1 r1 t2 r'
   | T_Region _ _ _ _ -> ()
-  | T_ReadCell #_ #_ #_ #_ #_ #a #k #lay _ _ _ -> reg_readcell sg g a k lay t
+  | T_ReadCell #_ #_ #_ #_ #a #k #lay _ _ _ -> reg_readcell sg g a k lay t
   | T_WriteCell _ _ h1 -> typing_regular' h1; check_t_unit sg g
   | T_Match om hes _ hm hdt ->
     exps_typing_regular' hes;
     match_typing_regular' hm;
     dt_typing_regular' hdt
-  | T_OpenEffC #_ #_ #_ #_ #_ #r' #_ #_ #r0 h1 _ ->
+  | T_OpenEffC #_ #_ #_ #_ #r' #_ #_ #r0 h1 _ ->
     typing_regular' h1;
     check_union sg g r0 r' EEffect
   | T_Force _ _ -> check_closed_ctx sg g t KType
   | T_Fill _ _ h1 -> typing_regular' h1
-  | T_RegionOpen #_ #_ #_ #_ #_ #_ #_ #_ #_ #b0 _ _ _ _ _ ->
+  | T_RegionOpen #_ #_ #_ #_ #_ #_ #_ #_ #b0 _ _ _ _ _ ->
     check_closed_ctx sg g b0 KType;
     check_closed_ctx sg g r (KRow EEffect)
   | T_Opaque _ _ -> ()
 
-and exps_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts)
+and exps_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g)
           (ensures tys_ok sg g ts /\ check sg g r (KRow EEffect))
           (decreases h) =
@@ -351,14 +351,14 @@ and match_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) 
   | TM_Nil _ -> ()
   | TM_Cons _ h1 h2 -> typing_regular' h1; match_typing_regular' h2
 
-and dt_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
-  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d tl om dt t r)
+and dt_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r)
   : Lemma (requires sig_ok sg /\ wf_ctx sg g /\ octx_ok sg g om)
           (ensures check sg g t KType /\ check sg g r (KRow EEffect))
           (decreases h) =
   match h with
   | TD_Leaf h1 -> typing_regular' h1
-  | TD_Bind #_ #_ #_ #_ #_ #_ #_ #_ #t_o ho hdt ->
+  | TD_Bind #_ #_ #_ #_ #_ #_ #_ #t_o ho hdt ->
     occ_typing_regular ho;
     wf_ctx_push_var sg g t_o;
     ctx_ext_push_var g t_o;
@@ -373,7 +373,7 @@ and dt_typing_regular' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (
   | TD_SwitchKeyDef _ _ _ _ _ _ _ hbr _ -> key_brs_typing_regular' hbr
   | TD_Guard _ h2 _ -> dt_typing_regular' h2
 
-let typing_regular #sg #ln #g #d #tl #e #t #r h = typing_regular' h
+let typing_regular #sg #ln #g #d #e #t #r h = typing_regular' h
 
 let chain_typing_args_ok #sg #ln #g #d #r #e h = chain_typing_args_ok' h
 
@@ -384,7 +384,7 @@ let chain_typing_regular #sg #ln #g #d #r #e h =
   | Some (t, th) -> reg_chain sg g e t th
   | None -> ()
 
-let exps_typing_regular #sg #ln #g #d #tl #r #es #ts h = exps_typing_regular' h
+let exps_typing_regular #sg #ln #g #d #r #es #ts h = exps_typing_regular' h
 
 let binds_typing_regular #sg #ln #g #bs h = binds_typing_regular' h
 
@@ -392,14 +392,14 @@ let cells_typing_regular #sg #ln #g #cells #lay h = cells_typing_regular' h
 
 let match_typing_regular #sg #ln #g #d #r #th #om h = match_typing_regular' h
 
-let dt_typing_regular #sg #ln #g #d #tl #om #dt #t #r h = dt_typing_regular' h
+let dt_typing_regular #sg #ln #g #d #om #dt #t #r h = dt_typing_regular' h
 
-let ctor_brs_typing_regular #sg #ln #g #d #tl #om #o #ks #ss #cs #bs #t #r h =
+let ctor_brs_typing_regular #sg #ln #g #d #om #o #ks #ss #cs #bs #t #r h =
   ctor_brs_typing_regular' h
 
-let lit_brs_typing_regular #sg #ln #g #d #tl #om #lt #bs #t #r h = lit_brs_typing_regular' h
+let lit_brs_typing_regular #sg #ln #g #d #om #lt #bs #t #r h = lit_brs_typing_regular' h
 
-let key_brs_typing_regular #sg #ln #g #d #tl #om #o #kts #bs #t #r h = key_brs_typing_regular' h
+let key_brs_typing_regular #sg #ln #g #d #om #o #kts #bs #t #r h = key_brs_typing_regular' h
 
 let rec clauses_typing_regular #sg #ln #g #ei #ts #r #b #cs h =
   match h with
@@ -407,6 +407,6 @@ let rec clauses_typing_regular #sg #ln #g #ei #ts #r #b #cs h =
   | TCL_Full _ _ _ _ h' -> clauses_typing_regular h'
   | TCL_Fast _ _ _ h' -> clauses_typing_regular h'
 
-let case_octx_ok #sg #ln #g #d #tl #r #es #ts h =
+let case_octx_ok #sg #ln #g #d #r #es #ts h =
   exps_typing_regular' h;
   octx_ok_scrut_occs sg g 0 ts

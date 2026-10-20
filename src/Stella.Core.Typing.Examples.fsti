@@ -102,7 +102,7 @@ let ex_sig : sig = {
 (** `λ (x : Int) / (). x` *)
 let id_exp : exp = ELam t_int TRowEmpty (EVar 0)
 
-val id_typing : typing ex_sig [] (decl_ctx 0) [] true id_exp (t_fun t_int TRowEmpty t_int) TRowEmpty
+val id_typing : typing ex_sig [] (decl_ctx 0) [] id_exp (t_fun t_int TRowEmpty t_int) TRowEmpty
 
 (** * A record *)
 
@@ -111,7 +111,7 @@ let key_x : key = SymbolKey "x"
 (** `select x (extend x 1 {})` *)
 let select_exp : exp = ESelect key_x (EExtend key_x (ELit (LInt 1l)) ERecEmpty)
 
-val select_typing : typing ex_sig [] (decl_ctx 0) [] true select_exp t_int TRowEmpty
+val select_typing : typing ex_sig [] (decl_ctx 0) [] select_exp t_int TRowEmpty
 
 (** * A handler *)
 
@@ -159,7 +159,7 @@ let to_maybe_ty : typ =
   TForall (KRow EEffect)
     (TConstr lacks_partial (TForall KType (t_fun thunk_ty (TVar 1) (maybe_ty (TVar 0)))))
 
-val to_maybe_typing : typing ex_sig [] (decl_ctx 0) [] true to_maybe to_maybe_ty TRowEmpty
+val to_maybe_typing : typing ex_sig [] (decl_ctx 0) [] to_maybe to_maybe_ty TRowEmpty
 
 (** * The names of `Prim` *)
 

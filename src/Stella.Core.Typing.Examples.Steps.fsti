@@ -42,9 +42,9 @@ let just_one : exp = EApp (ETyApp (EGlobal (prelude "Just") []) t_int) (lit_int 
 let open_just_one : exp = EOpenEffC partial_row just_one
 
 val open_just_one_typing :
-  typing ex_sig [] (decl_ctx 0) [] true open_just_one (maybe_ty t_int) partial_row
+  typing ex_sig [] (decl_ctx 0) [] open_just_one (maybe_ty t_int) partial_row
 
-val just_one_typing : typing ex_sig [] (decl_ctx 0) [] true just_one (maybe_ty t_int) partial_row
+val just_one_typing : typing ex_sig [] (decl_ctx 0) [] just_one (maybe_ty t_int) partial_row
 
 (** `Prelude.konst [Int] 1`, a value: its declared remainder is an arrow. *)
 let konst_one : exp = EApp (ETyApp (EGlobal (prelude "konst") []) t_int) (lit_int 1l)
@@ -52,7 +52,7 @@ let konst_one : exp = EApp (ETyApp (EGlobal (prelude "konst") []) t_int) (lit_in
 val konst_one_value : unit -> Lemma (V.is_value ex_sig konst_one)
 
 val konst_one_typing :
-  typing ex_sig [] (decl_ctx 0) [] true konst_one (t_fun t_int TRowEmpty t_int) partial_row
+  typing ex_sig [] (decl_ctx 0) [] konst_one (t_fun t_int TRowEmpty t_int) partial_row
 
 (** `Prelude.konst [Int] 1 2`, saturated, a redex. *)
 let konst_one_two : exp = EApp konst_one (lit_int 2l)
@@ -60,7 +60,7 @@ let konst_one_two : exp = EApp konst_one (lit_int 2l)
 val konst_one_two_redex : unit -> Lemma (V.foreign_redex ex_sig konst_one_two)
 
 val konst_one_two_typing :
-  typing ex_sig [] (decl_ctx 0) [] true konst_one_two t_int partial_row
+  typing ex_sig [] (decl_ctx 0) [] konst_one_two t_int partial_row
 
 (** * Region frames *)
 
@@ -77,8 +77,8 @@ let frame : exp = ERegionOpen reg_a [] (EGlobal prim_unit_ctor [])
     frame stands at the row `r`, which is no closed type. *)
 let frame_at_var : exp = ETyLam (KRow EEffect) (ELam t_unit (TVar 0) frame)
 
-val frame_at_var_untypable (#d: jctx) (#tl: bool) (#t #r: typ)
-  (h: typing ex_sig [] g_run d tl frame_at_var t r)
+val frame_at_var_untypable (#d: jctx) (#t #r: typ)
+  (h: typing ex_sig [] g_run d frame_at_var t r)
   : Lemma False
 
 (** `( region a )` *)
@@ -100,16 +100,16 @@ val frame_contractum_inst : unit -> Lemma (subst1_ty_exp region_row frame_fn == 
 (** The frame has the type `Unit ! ()` under `r`, and the same in the
     instance, where `r` is `( region a )`. *)
 val frame_typing_under_var :
-  typing ex_sig [] (push_var (push_tvar g_run (KRow EEffect)) t_unit) [] false frame t_unit
+  typing ex_sig [] (push_var (push_tvar g_run (KRow EEffect)) t_unit) [] frame t_unit
     TRowEmpty
 
-val frame_typing_inst : typing ex_sig [] (push_var g_run t_unit) [] false frame t_unit TRowEmpty
+val frame_typing_inst : typing ex_sig [] (push_var g_run t_unit) [] frame t_unit TRowEmpty
 
 val frame_redex_typing :
-  typing ex_sig [] g_run [] true frame_redex (t_fun t_unit region_row t_unit) TRowEmpty
+  typing ex_sig [] g_run [] frame_redex (t_fun t_unit region_row t_unit) TRowEmpty
 
 val frame_contractum_typing :
-  typing ex_sig [] g_run [] true frame_contractum (t_fun t_unit region_row t_unit) TRowEmpty
+  typing ex_sig [] g_run [] frame_contractum (t_fun t_unit region_row t_unit) TRowEmpty
 
 (** * A variant value at its residual type *)
 
@@ -132,10 +132,10 @@ let case_inj : exp =
        [(key_x, DLeaf (EInject key_y TRowEmpty (ELit (LBool false))))]
        (Some (DBind (OScrut 0) (DLeaf (EVar 0)))))
 
-val case_inj_typing : typing ex_sig [] (decl_ctx 0) [] true case_inj (t_variant row_yb) TRowEmpty
+val case_inj_typing : typing ex_sig [] (decl_ctx 0) [] case_inj (t_variant row_yb) TRowEmpty
 
 val inj_y_residual_typing :
-  typing ex_sig [] (decl_ctx 0) [] false inj_y (t_variant row_yb) TRowEmpty
+  typing ex_sig [] (decl_ctx 0) [] inj_y (t_variant row_yb) TRowEmpty
 
 (** The annotation of a variant value is checked: with a region reference
     that no `region` binds in its row, `inject y [ρ] true` has no type,
@@ -145,8 +145,8 @@ let row_dangling : typ =
 
 let inj_dangling : exp = EInject key_y row_dangling (ELit (LBool true))
 
-val inj_dangling_untypable (#g: ctx) (#d: jctx) (#tl: bool) (#t #r: typ)
-  (h: typing ex_sig [] g d tl inj_dangling t r)
+val inj_dangling_untypable (#g: ctx) (#d: jctx) (#t #r: typ)
+  (h: typing ex_sig [] g d inj_dangling t r)
   : Lemma False
 
 (** * `switchKey` under a substitution *)
@@ -182,7 +182,7 @@ val switch_contractum_inst : unit ->
 let switch_ty : typ =
   TConstr (lacks_y row_yi) (t_fun (t_variant (TRowExt (EntTy key_y t_int) row_yi)) TRowEmpty t_int)
 
-val switch_redex_typing : typing ex_sig [] (decl_ctx 0) [] true switch_redex switch_ty TRowEmpty
+val switch_redex_typing : typing ex_sig [] (decl_ctx 0) [] switch_redex switch_ty TRowEmpty
 
 val switch_contractum_typing :
-  typing ex_sig [] (decl_ctx 0) [] true switch_contractum switch_ty TRowEmpty
+  typing ex_sig [] (decl_ctx 0) [] switch_contractum switch_ty TRowEmpty

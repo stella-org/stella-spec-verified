@@ -223,7 +223,7 @@ The predicate `is_source` excludes these forms.
 
 A chain headed by a constructor or a foreign also has a typing rule of its own (`T_Chain`, through the node-by-node judgement `chain_typing`), as in the specification (spec 05 §Typing a chain). Each node's cursor is recomputed from its prefix. Type arguments are kinded at the kinds the cursor gives, and constraint arguments are entailed. Value arguments are typed at the chain's ambient row against the pure arrows of the declared type. So a constructor or foreign applied to values has its type at every ambient row, which is what a value needs. The ordinary rules for application still apply to the nodes of a chain. Any derivation of a chain whose cursor is defined can be rebuilt with `chain_typing`, at a type equal to the cursor's instance (`Stella.Core.Typing.Chain`), and a typed constructor chain always has a defined cursor. A saturated foreign applied to further arguments is an ordinary application, and its cursor is undefined.
 
-**Values do not depend on where they stand.** A well-typed run-time value has the same type at every well-kinded ambient row, under every join-point context, and at either tail flag (`Stella.Core.Typing.Values`). Function types are recognized through the class Σ records for the function type constructor (§4.1).
+**Values do not depend on where they stand.** A well-typed run-time value has the same type at every well-kinded ambient row and under every join-point context (`Stella.Core.Typing.Values`). Function types are recognized through the class Σ records for the function type constructor (§4.1).
 
 `fail` is derived notation (spec 03 §Partiality) and is a function rather than a constructor. Its expansion names the effect `Partial` and the constructor `Prim.Unit`, which are passed to it as parameters, and the result type `τ`.
 
@@ -300,31 +300,34 @@ type ctx = {
 - **Closedness.** A term typed in `g` under `Δ` is closed with respect to its binders. Its free type variables, term variables, and join points lie below the sizes of `g.tvars`, `g.vars`, and `Δ`, and it is locally closed for regions. Its free region names lie in the domain of `g.regions` (`Stella.Core.Typing.Scope`). This needs the keys of every layout in `g.regions` to be structural, which `wf_ctx` includes: a layout entry is well formed when its key is structural and its type is kinded at `Type`. Entering a region keeps it, because the layout is kinded as a `Row Type`. Distinct region names and distinct layout keys are not part of `wf_ctx`; they belong to the stronger run-time invariant `rctx_ok` (§4.5).
 - **Join points.** Typing is preserved by a renaming of join points that maps `Δ` into `Δ'` entry by entry, and so by weakening `Δ` (`Stella.Core.Typing.Join`). This relies on the bodies that discard `Δ` being closed for join points.
 - **Renaming and weakening.** Typing is preserved by a type renaming `ξ` from `g` to `g'` (`ty_ren_ok`, assuming `sig_ok`): the kinding condition `ren_ok` holds, each term variable's type is the renamed one, and each region's layout, looked up by `assoc`, is the renamed one. Typing is also preserved by a term renaming (`tm_ren_ok`), which keeps the type variables and maps each term variable to one of the same type. Both conditions are re-established under every binder the rules use. Weakening by a binder, by hypotheses, or by a region is a corollary (`Stella.Core.Typing.Weaken`). In particular, adding a fresh region to `g.regions` is weakening.
+- **Type substitution.** Typing is preserved by a type substitution `σ` from `g` to `g'` (`ty_sub_ok`, `Stella.Core.Typing.Subst.Ty`). The condition has three parts: the kinding condition `sub_ok` holds, every substitute is locally closed for regions, and each term variable's type and each region's layout is the substituted one. The theorems assume `sig_ok` and that the type variables of `g'` have quantifiable kinds (`tvars_wf`).
+  - The fact `RegionKey ℓ ∉ j` that a region adds maps to `RegionKey ℓ ∉ σ j`. The region entered in `g'` entails it, because the tails of the row `σ j` are row variables of `g'`, and the region gives each of them a fact.
+  - Without `tvars_wf`, a variable of kind `κ -> Row Effect` would make an application a tail, and no fact would cover it.
+- **Kind instantiation.** Typing is preserved by kind instantiation (`Stella.Core.Typing.Kinst`). Instantiation can give a type variable the kind `Row Effect`, so the instance of a region body's context has at most the facts of the region entered in the instantiated context. Typing is then weakened to that context.
+- **Term substitution.** Typing is preserved by a term substitution `tm_sub_ok` (`Stella.Core.Typing.Subst.Tm`). It maps each term variable of `g` either to a variable of `g'` of the same type, or to a run-time value typed in `g'` at the empty row under no join point. Every substitute is closed for join points and locally closed for regions. `Stella.Core.Typing.Subst.Tm.Inst` derives the instances that reduction uses. In β, the body of the `λ` is typed at `Δ = []`, and the contractum is typed at the `Δ` of the redex.
 - **Well-formedness** of a context checks only structure. Every kind in `tvars` is a well-formed quantifiable kind, every fact and assumption is a well-formed constraint, every term variable's type and every layout entry is well formed, and the indices are in scope. Whether the assumptions are consistent is a separate, computable predicate, `inconsistent` (§2.2).
 
 ### 4.3 The join-point context Δ
 
-`Δ` is a list of triples: the parameter types, the result type, and the ambient effect row of a join point. It is empty in the following places (spec 04 §Join points):
+`Δ` is a list of triples: the parameter types, the result type, and the ambient effect row of a join point. It holds exactly the join points that a `jump` may target from where it stands. `jump j (ē)` reads the types and the row of `j` from `Δ` and asks nothing else of its position. As in System FJ, `Δ` is relative: the `Δ` of a position depends only on the forms between it and the nearest non-tail position or boundary above it.
 
-- the bodies of `λ`, `Λ`, and constraint `Λ`;
-- the handled computation, the return clause, and every operation clause of `handle`;
-- the body of `region` and of an open frame `region⟨ℓ⟩`;
-- the initializers of `letrec`, and the subterm of `fill`.
+- **A non-tail position starts with `Δ = []`.** This covers both sides of an application, the value arguments of a chain, the bound side of `let`, the scrutinees of `case`, the values `θ` of `match`, the condition of `guard`, and the arguments of `jump`. It also covers every subterm of a record or variant operation, the base and payload of a variant value, the argument of `perform`, the value of `writeCell`, the initial values of `region`, and the operands of `[τ]`, `[•]`, and `openEff`.
+- **`letjoin j (x̄ : τ̄) : τ = e1 in e2` adds `j` to the `Δ` it is given**, both for its definition `e1` (under the parameters) and for its continuation `e2`.
+- **Tail-transparent positions inherit `Δ`.** These are the body of `let` and of `letrec`, the continuation of `letjoin`, the tree of `case` and of `match`, and the branches and leaves of a decision tree.
+- **Boundaries also start with `Δ = []`** (spec 04 §Join points). These are:
+  - the bodies of `λ`, `Λ`, and constraint `Λ`;
+  - the handled computation and every clause of `handle`;
+  - the body of `region`, and the body and cells of an open frame `region⟨ℓ⟩`;
+  - the initializers of `letrec`;
+  - the operand of `fill` and the operand of `openEffC`.
 
-These places also put their subterm in tail position, except the initializers of `letrec` and the subterm of `fill`, which are out of tail position (spec 05 §Basic rules).
+A `jump` to `j` therefore stands under the `letjoin` of `j` in a tail context `Tl` (spec 06 §Evaluation contexts) once the tail-transparent forms between them have reduced, wherever that `letjoin` stands. Reduction keeps this. For example, β-reduction moves the body of a `λ`, typed at `Δ = []`, to the position of the application, and weakening `Δ` (§4.2) types it there.
 
-**Tail position is a flag of the typing judgement**, separate from `Δ`:
+`Stella.Core.Typing.Examples.Join` types a β-redex whose `λ` body jumps to its own join point, and its contractum in argument position. It also shows that a jump out of a non-tail position has no type.
 
-- a child that is not in tail position is typed with the flag false and keeps `Δ`;
-- `jump` requires the flag;
-- the definition of a `letjoin` is in tail position wherever the `letjoin` stands;
-- the continuation of a `letjoin`, the body of a `let` or `letrec`, and the leaves of a decision tree inherit the flag.
+`Δ` is never carried under a type binder, so its types never need shifting.
 
-A join definition in a non-tail position may therefore jump to an outer join point. Such a definition is never reached at run time, because every jump to it would itself be out of tail position.
-
-So `Δ` is never carried under a type binder, and its types never need shifting.
-
-The syntactic predicate `jp_scoped n e` (`Stella.Core.Value`) holds when every `jump` in `e` targets a join point in scope, where `n` is the size of `Δ` at the root and `Δ` is emptied at the places above. Every well-typed term satisfies it. A `jp_scoped` value has no free join index, so the reduction `letjoin j … in v → v` returns `v` unchanged.
+The syntactic predicate `jp_scoped n e` (`Stella.Core.Value`) holds when every `jump` in `e` targets a join point in scope. Here `n` is the size of `Δ` at the root, and `Δ` is emptied only at the boundaries, the operand of `openEffC` aside. The typing rules also empty `Δ` at non-tail positions, so `jp_scoped` over-approximates them, and every well-typed term satisfies it. A `jp_scoped` value has no free join index, so the reduction `letjoin j … in v → v` returns `v` unchanged.
 
 ### 4.4 The occurrence context Ω
 
@@ -342,8 +345,8 @@ Run-time terms involve two global contexts besides `Σ` (spec 06 §Run-time form
 `Γ_R` is the `regions` component of the context in which a closed run-time term is typed, so extending `Γ_R` is an instance of weakening the context (§4.2). `Γ_N` is a separate parameter of the term typing judgement:
 
 ```
-typing    : sig -> lctx -> ctx -> jctx -> (tail:bool) -> exp -> typ -> (row:typ) -> Type
-dt_typing : sig -> lctx -> ctx -> jctx -> (tail:bool) -> octx -> dtree -> typ -> (row:typ) -> Type
+typing    : sig -> lctx -> ctx -> jctx -> exp -> typ -> (row:typ) -> Type
+dt_typing : sig -> lctx -> ctx -> jctx -> octx -> dtree -> typ -> (row:typ) -> Type
 ```
 
 The two are mutually inductive, with list and clause judgements beside them (`Stella.Core.Typing`).
@@ -374,7 +377,7 @@ A recursive group is initialization-safe when each right-hand side, while it is 
   Each environment entry carries the expression and environment it refers to, so the nested fixed points need no cyclic structure.
 - **Join points are read where they are jumped to.** A jump's argument reaches a parameter of the join point the jump targets. The target is found by comparing the depth of join binders at the jump with the depth at the `letjoin`. This syntactic count agrees with `Δ` on `jp_scoped` terms (§4.3).
 - **Chains of constructors and foreigns.** A chain whose head is a constructor or a foreign builds a value without running what it is given, provided it has no more value arguments than the arrows of the head's declared type. Such a chain does not promote reads from later to now. An over-applied chain is an ordinary application of its saturated prefix.
-- **Renaming.** The judgement is invariant under type renaming and substitution, which it does not look at, and under a term renaming lifted past the group's members, which keeps the members fixed and sends every outside variable to an outside variable (`Stella.Core.Init.Rename`).
+- **Invariance.** The judgement reads no type and no kind, so it is invariant under type renaming, type substitution, and kind instantiation. It is also invariant under a term renaming or a term substitution lifted past the group's members. Such a map keeps the members fixed and replaces every outside variable with a term that reads nothing of the group. One simulation covers all five maps (`Stella.Core.Init.Sim`).
 - **Run-time forms** have rules as well, because evaluation substitutes `force ν` for the members of an enclosing group into the initializers of a nested one (spec 06 §Recursive bindings):
   - `match` is read as `case`;
   - `openEffC` passes reads through;
@@ -411,7 +414,7 @@ Items marked with a Proposal 14 number are the subject of that proposal and not 
 | `region⟨ℓ⟩ θ` requires `dom(θ) = { k̄ }` (spec 06 §Run-time forms). | `θ` holds one value per cell, in the order of the layout. |
 | `F(k)`, the payload a row's normal form holds at `k`, is read off the normal form in the rules for `perform` and the record-field occurrence (spec 05). Here a normal form holds canonical payloads, not types. | The derivation writes a type whose canonical form is the payload and which is kinded at `Type`. Kinding the row makes the entry unique, by sharpness. |
 | The rules give the ambient row no conversion of its own (spec 05 §Basic rules converts types). | `T_Conv` converts the type and the ambient row together, up to type equality. |
-| `jump` is typed only in the tail positions `Tl` (spec 06 §Evaluation contexts). | The tail flag also passes into the bodies of `let` and `letrec` and the leaves of decision trees, statically over-approximating `Tl`. By the time such a jump is evaluated, the `let`, `letrec`, or decision tree around it has reduced away, so the jump stands in a `Tl` position. Progress establishes this, together with the unreachability of join definitions in non-tail positions (§4.3). |
+| `jump` requires its own position to be a tail position, while `Δ` is carried unchanged into non-tail positions and emptied only at the boundaries (spec 05 §Join points and decision trees). Reduction does not preserve this. The body of a `λ` may hold `letjoin j … in jump j (…)` with the jump in tail position, and β-reduction can move that body into a non-tail position, such as the argument of another application, where the jump has no type. (Proposal 14 S8.) | `Δ` is relative, as in System FJ: a non-tail position starts with `Δ = []`, and `jump` asks only that its target be in `Δ` (§4.3). |
 
 ### 6.2 Problems found by this formalization and repaired upstream
 

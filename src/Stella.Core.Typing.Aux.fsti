@@ -26,8 +26,9 @@ module L = FStar.List.Tot
 
 (** `Δ`: for each join point in scope, its parameter types, its result type
     and its ambient effect row, `j : (τ̄) -> τ ! ρ`. The head is join index 0.
-    `Δ` is emptied wherever it is discarded (design §4.3), so it is never
-    carried under a type binder and its types need no shifting. *)
+    `Δ` is emptied at every non-tail position and at every boundary
+    (`Stella.Core.Typing`; design §4.3), so it is never carried under a
+    type binder and its types need no shifting. *)
 type jctx = list (list typ & typ & typ)
 
 (** `Ω`: the types of occurrences, extended at the head, so a lookup finds

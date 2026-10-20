@@ -39,9 +39,9 @@ val key_split_keys_struct (sg: sig) (g: ctx) (vr: typ) (kts: list (key & typ)) (
           (ensures keys_struct (L.map fst kts))
 
 (** The branches of a `switchKey` have the keys of the split, in order. *)
-val key_brs_typing_keys (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx)
+val key_brs_typing_keys (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
   (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
   : Lemma (L.map fst bs == L.map fst kts)
 
 (** * Keys under renaming, substitution and kind instantiation *)

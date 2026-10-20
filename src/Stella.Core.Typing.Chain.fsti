@@ -6,9 +6,10 @@
  * chain headed by a constructor or a foreign as well as `T_Chain` does,
  * and `T_Conv` may stand anywhere in between. Every derivation of such a
  * chain whose cursor `⟨ σ ; θ ⟩` is defined is re-derived node by node as
- * `chain_typing`, at the same ambient row and `Δ`, and its type is `θ(σ)`
- * up to type equality (`chain_normal`). A value argument keeps its
- * derivation, converted to the instance `θ(τ1)` of the domain it meets.
+ * `chain_typing`, at the same ambient row and under `Δ = []`, under which
+ * the rules type the subterms of a chain, and its type is `θ(σ)` up to type
+ * equality (`chain_normal`). A value argument keeps its derivation,
+ * converted to the instance `θ(τ1)` of the domain it meets.
  *
  * A constructor chain always has a defined cursor once it is typed: a
  * constructor's remainders are `forall`s, pure arrows and, once saturated,
@@ -70,11 +71,11 @@ val chain_typing_conv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r1: typ) (#e
 
 (** Chain normalization: a typed chain headed by a constructor or a
     foreign, whose cursor is defined, or headed by a constructor, is typed
-    by `chain_typing` at its row and `Δ`, its cursor is defined, and its
-    type is the instance of the cursor up to type equality. *)
-val chain_normal (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r)
-  : Pure (chain_typing sg ln g d r e)
+    by `chain_typing` at its row under `Δ = []`, its cursor is defined,
+    and its type is the instance of the cursor up to type equality. *)
+val chain_normal (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r)
+  : Pure (chain_typing sg ln g [] r e)
          (requires sig_ok sg /\ Some? (decompose_global_app e) /\
                    (Some? (chain_cursor sg e) \/ ctor_headed sg e))
          (ensures fun _ ->
@@ -83,11 +84,11 @@ val chain_normal (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: ex
            | None -> False)
 
 (** The same, as a statement: the derivation exists. *)
-val chain_normal_exists (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp)
-  (#t #r: typ) (h: typing sg ln g d tl e t r)
+val chain_normal_exists (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r)
   : Lemma (requires sig_ok sg /\ Some? (decompose_global_app e) /\
                     (Some? (chain_cursor sg e) \/ ctor_headed sg e))
-          (ensures (exists (hc: chain_typing sg ln g d r e). True) /\
+          (ensures (exists (hc: chain_typing sg ln g [] r e). True) /\
                    (match chain_cursor sg e with
                     | Some (s, th) -> ty_eq t (sub_ty th s)
                     | None -> False))

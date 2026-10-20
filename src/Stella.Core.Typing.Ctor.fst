@@ -37,25 +37,25 @@ open Stella.Core.Typing.Regularity
 open Stella.Core.Typing.Wf
 module L = FStar.List.Tot
 
-let rec exps_typing_length #sg #ln #g #d #tl #r #es #ts h =
+let rec exps_typing_length #sg #ln #g #d #r #es #ts h =
   match h with
   | TE_Nil _ -> ()
   | TE_Cons _ h' -> exps_typing_length h'
 
-let rec exps_typing_snoc #sg #ln #g #d #tl #r #es #ts #e #t h h1 =
+let rec exps_typing_snoc #sg #ln #g #d #r #es #ts #e #t h h1 =
   match h with
   | TE_Nil hr -> TE_Cons h1 (TE_Nil hr)
   | TE_Cons h0 h' -> TE_Cons h0 (exps_typing_snoc h' h1)
 
-let rec exps_typing_nth #sg #ln #g #d #tl #r #es #ts h j e t =
+let rec exps_typing_nth #sg #ln #g #d #r #es #ts h j e t =
   match h with
   | TE_Cons h0 h' -> if j = 0 then h0 else exps_typing_nth h' (j - 1) e t
 
 (* The indices of a derivation, read up to equality. *)
-let cast_exps (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ)
-  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d tl r es ts)
+let cast_exps (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts)
   (es': list exp{es' == es}) (ts': list typ{ts' == ts})
-  : exps_typing sg ln g d tl r es' ts' =
+  : exps_typing sg ln g d r es' ts' =
   h
 
 let rec chain_typing_domains #sg #ln #g #d #r #e hc =
@@ -84,16 +84,16 @@ let ctor_chain_fields sg e c ks args ci t th = ctor_chain_saturated sg e c ks ar
 
 (* Lists up to type equality. *)
 
-let rec exps_typing_conv #sg #ln #g #d #tl #r #es #ts h ts'
-  : Pure (exps_typing sg ln g d tl r es ts')
+let rec exps_typing_conv #sg #ln #g #d #r #es #ts h ts'
+  : Pure (exps_typing sg ln g d r es ts')
          (requires tys_eq ts ts' /\ tys_ok sg g ts' /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TE_Nil sq -> TE_Nil sq
-  | TE_Cons #_ #_ #_ #_ #_ #_ #_ #_ #t0 #ts0 h1 h2 ->
+  | TE_Cons #_ #_ #_ #_ #_ #_ #_ #t0 #ts0 h1 h2 ->
     let t1 :: ts1 = ts' in
     ty_eq_refl r;
-    let h1' : typing sg ln g d tl _ t1 r = T_Conv h1 () () in
+    let h1' : typing sg ln g d _ t1 r = T_Conv h1 () () in
     TE_Cons h1' (exps_typing_conv h2 ts1)
 
 (* Saturation at a data type. *)
@@ -366,7 +366,7 @@ let ctor_fields_tys_eq sg c ks ss ss' =
 
 (* The value at a data type. *)
 
-let ctor_value_fields_typing #sg #ln #g #d #tl #v #t_o #r h c ks args tq ks' ss' cs fs' =
+let ctor_value_fields_typing #sg #ln #g #d #v #t_o #r h c ks args tq ks' ss' cs fs' =
   let hc = chain_normal h in
   let Some (s, th) = chain_cursor sg v in
   let ts = tapps (TCon tq ks') ss' in

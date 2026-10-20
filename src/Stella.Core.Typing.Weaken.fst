@@ -105,11 +105,11 @@ let rec ty_ren_ok_shifts (g: ctx) (ks: list kind)
     ty_ren_ok_ext (fun i -> shift (L.length ks') (shift 1 i)) (shift (L.length ks)) g
       (push_tvars (push_tvar g k) ks')
 
-let typing_weaken_tvar #sg #ln #g #d #tl #e #t #r h k =
+let typing_weaken_tvar #sg #ln #g #d #e #t #r h k =
   ty_ren_ok_shift g k;
   typing_ren_ty h (shift 1) (push_tvar g k)
 
-let typing_weaken_tvars #sg #ln #g #d #tl #e #t #r h ks =
+let typing_weaken_tvars #sg #ln #g #d #e #t #r h ks =
   ty_ren_ok_shifts g ks;
   typing_ren_ty h (shift (L.length ks)) (push_tvars g ks)
 
@@ -142,22 +142,22 @@ let rec tm_ren_ok_shifts (g: ctx) (ts: list typ)
     tm_ren_ok_ext (fun i -> shift (L.length ts') (shift 1 i)) (shift (L.length ts)) g
       (push_vars (push_var g t) ts')
 
-let typing_weaken_var #sg #ln #g #d #tl #e #t #r h t' =
+let typing_weaken_var #sg #ln #g #d #e #t #r h t' =
   tm_ren_ok_shift g t';
   typing_ren_tm h (shift 1) (push_var g t')
 
-let typing_weaken_vars #sg #ln #g #d #tl #e #t #r h ts =
+let typing_weaken_vars #sg #ln #g #d #e #t #r h ts =
   tm_ren_ok_shifts g ts;
   typing_ren_tm h (shift (L.length ts)) (push_vars g ts)
 
 (* Extending the context in place. *)
 
-let typing_weaken_ext #sg #ln #g #d #tl #e #t #r h g' =
+let typing_weaken_ext #sg #ln #g #d #e #t #r h g' =
   tm_ren_ok_id g g';
   ren_tm_id e;
   typing_ren_tm h id_ren g'
 
-let typing_weaken_assumps #sg #ln #g #d #tl #e #t #r h cs =
+let typing_weaken_assumps #sg #ln #g #d #e #t #r h cs =
   ctx_ext_add_assumps g cs;
   typing_weaken_ext h (add_assumps g cs)
 
@@ -166,7 +166,7 @@ let rec assoc_mem (a: atom) (rs: list (atom & layout))
   match rs with
   | (b, _) :: rs' -> if a = b then () else assoc_mem a rs'
 
-let typing_weaken_region #sg #ln #g #d #tl #e #t #r h a l =
+let typing_weaken_region #sg #ln #g #d #e #t #r h a l =
   let g' = { g with regions = (a, l) :: g.regions } in
   assert (hyps g' == hyps g);
   ctx_ext_refl g;
@@ -191,14 +191,14 @@ let lctx_incl_append ln ln' =
   with introduce _ ==> _
   with nth_append ln ln' nu
 
-let rec typing_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: exp) (#t #r: typ)
-  (h: typing sg ln g d tl e t r) (ln': lctx)
-  : Pure (typing sg ln' g d tl e t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
+let rec typing_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (ln': lctx)
+  : Pure (typing sg ln' g d e t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
          (decreases h) =
   match h with
   | T_Var sq1 sq2 -> T_Var sq1 sq2
   | T_Global sq1 sq2 sq3 -> T_Global sq1 sq2 sq3
-  | T_Lit #_ #_ #_ #_ #_ #c sq -> T_Lit #sg #ln' #g #d #tl #c #r sq
+  | T_Lit #_ #_ #_ #_ #c sq -> T_Lit #sg #ln' #g #d #c #r sq
   | T_Lam sq1 sq2 hb -> T_Lam sq1 sq2 (typing_ln hb ln')
   | T_App h1 h2 -> T_App (typing_ln h1 ln') (typing_ln h2 ln')
   | T_Chain hc sq -> T_Chain (chain_ln hc ln') sq
@@ -227,9 +227,9 @@ let rec typing_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: e
   | T_Handle sq1 sq2 sq3 sq4 h1 h2 hcl ->
     T_Handle sq1 sq2 sq3 sq4 (typing_ln h1 ln') (typing_ln h2 ln') (clauses_ln hcl ln')
   | T_OpenEff h1 sq -> T_OpenEff (typing_ln h1 ln') sq
-  | T_Region #_ #_ #_ #_ #_ #lay #_ #body #b sq1 sq2 hes hbody ->
+  | T_Region #_ #_ #_ #_ #lay #_ #body #b sq1 sq2 hes hbody ->
     let hb' (a: atom{~(L.mem a (rdom g)) /\ ~(L.mem a (frn_exp body))})
-      : typing sg ln' (enter_region g a lay) [] true (open_region a body) b
+      : typing sg ln' (enter_region g a lay) [] (open_region a body) b
           (TRowExt (EntRegion (RFree a)) r) =
       typing_ln (hbody a) ln'
     in
@@ -238,15 +238,15 @@ let rec typing_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#e: e
   | T_WriteCell sq1 sq2 h1 -> T_WriteCell sq1 sq2 (typing_ln h1 ln')
   | T_Match om hes sq hm hdt -> T_Match om (exps_ln hes ln') sq (match_ln hm ln') (dt_ln hdt ln')
   | T_OpenEffC h1 sq -> T_OpenEffC (typing_ln h1 ln') sq
-  | T_Force #_ #_ #_ #_ #_ #nu _ sq2 -> T_Force #sg #ln' #g #d #tl #nu #t #r () sq2
-  | T_Fill #_ #_ #_ #_ #_ #nu _ sq2 h1
-    -> T_Fill #sg #ln' #g #d #tl #nu #_ #t #r () sq2 (typing_ln h1 ln')
+  | T_Force #_ #_ #_ #_ #nu _ sq2 -> T_Force #sg #ln' #g #d #nu #t #r () sq2
+  | T_Fill #_ #_ #_ #_ #nu _ sq2 h1
+    -> T_Fill #sg #ln' #g #d #nu #_ #t #r () sq2 (typing_ln h1 ln')
   | T_RegionOpen sq1 sq2 sq3 hc hb -> T_RegionOpen sq1 sq2 sq3 (cells_ln hc ln') (typing_ln hb ln')
-  | T_Opaque #_ #_ #_ #_ #_ #w sq1 sq2 -> T_Opaque #sg #ln' #g #d #tl #w #t #r sq1 sq2
+  | T_Opaque #_ #_ #_ #_ #w sq1 sq2 -> T_Opaque #sg #ln' #g #d #w #t #r sq1 sq2
 
-and exps_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#r: typ) (#es: list exp)
-  (#ts: list typ) (h: exps_typing sg ln g d tl r es ts) (ln': lctx)
-  : Pure (exps_typing sg ln' g d tl r es ts) (requires lctx_incl ln ln') (ensures fun _ -> True)
+and exps_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#es: list exp)
+  (#ts: list typ) (h: exps_typing sg ln g d r es ts) (ln': lctx)
+  : Pure (exps_typing sg ln' g d r es ts) (requires lctx_incl ln ln') (ensures fun _ -> True)
          (decreases h) =
   match h with
   | TE_Nil sq -> TE_Nil sq
@@ -286,9 +286,9 @@ and match_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#th: list ex
   | TM_Nil sq -> TM_Nil sq
   | TM_Cons sq h1 h2 -> TM_Cons sq (typing_ln h1 ln') (match_ln h2 ln')
 
-and dt_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#dt: dtree)
-  (#t #r: typ) (h: dt_typing sg ln g d tl om dt t r) (ln': lctx)
-  : Pure (dt_typing sg ln' g d tl om dt t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
+and dt_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx) (#dt: dtree)
+  (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (ln': lctx)
+  : Pure (dt_typing sg ln' g d om dt t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
          (decreases h) =
   match h with
   | TD_Leaf h1 -> TD_Leaf (typing_ln h1 ln')
@@ -303,27 +303,27 @@ and dt_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#
     TD_SwitchKeyDef vr vr' kts ho sq1 sq2 sq3 (kb_ln hbr ln') (dt_ln hdf ln')
   | TD_Guard h1 h2 h3 -> TD_Guard (typing_ln h1 ln') (dt_ln h2 ln') (dt_ln h3 ln')
 
-and cb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#o: occ)
+and cb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx) (#o: occ)
   (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree)) (#t #r: typ)
-  (h: ctor_brs_typing sg ln g d tl om o ks ss cs bs t r) (ln': lctx)
-  : Pure (ctor_brs_typing sg ln' g d tl om o ks ss cs bs t r) (requires lctx_incl ln ln')
+  (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r) (ln': lctx)
+  : Pure (ctor_brs_typing sg ln' g d om o ks ss cs bs t r) (requires lctx_incl ln ln')
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TCB_Nil sq -> TCB_Nil sq
   | TCB_Cons sq hdt h2 -> TCB_Cons sq (dt_ln hdt ln') (cb_ln h2 ln')
 
-and lb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#lt: typ)
-  (#bs: list (lit & dtree)) (#t #r: typ) (h: lit_brs_typing sg ln g d tl om lt bs t r) (ln': lctx)
-  : Pure (lit_brs_typing sg ln' g d tl om lt bs t r) (requires lctx_incl ln ln')
+and lb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx) (#lt: typ)
+  (#bs: list (lit & dtree)) (#t #r: typ) (h: lit_brs_typing sg ln g d om lt bs t r) (ln': lctx)
+  : Pure (lit_brs_typing sg ln' g d om lt bs t r) (requires lctx_incl ln ln')
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TLB_Nil sq -> TLB_Nil sq
   | TLB_Cons sq hdt h2 -> TLB_Cons sq (dt_ln hdt ln') (lb_ln h2 ln')
 
-and kb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#tl: bool) (#om: octx) (#o: occ)
+and kb_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx) (#o: occ)
   (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
-  (h: key_brs_typing sg ln g d tl om o kts bs t r) (ln': lctx)
-  : Pure (key_brs_typing sg ln' g d tl om o kts bs t r) (requires lctx_incl ln ln')
+  (h: key_brs_typing sg ln g d om o kts bs t r) (ln': lctx)
+  : Pure (key_brs_typing sg ln' g d om o kts bs t r) (requires lctx_incl ln ln')
          (ensures fun _ -> True) (decreases h) =
   match h with
   | TKB_Nil sq -> TKB_Nil sq
@@ -338,12 +338,12 @@ and clauses_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#ts: list ty
   | TCL_Full sq1 sq2 sq3 hb hcs -> TCL_Full sq1 sq2 sq3 (typing_ln hb ln') (clauses_ln hcs ln')
   | TCL_Fast sq1 sq2 hb hcs -> TCL_Fast sq1 sq2 (typing_ln hb ln') (clauses_ln hcs ln')
 
-let typing_lctx_ext #sg #ln #g #d #tl #e #t #r h ln' = typing_ln h ln'
+let typing_lctx_ext #sg #ln #g #d #e #t #r h ln' = typing_ln h ln'
 
-let exps_typing_lctx_ext #sg #ln #g #d #tl #r #es #ts h ln' = exps_ln h ln'
+let exps_typing_lctx_ext #sg #ln #g #d #r #es #ts h ln' = exps_ln h ln'
 
 (* Closed terms. *)
 
-let typing_closed_ext #sg #ln #g #d #tl #e #t #r h ln' g' =
+let typing_closed_ext #sg #ln #g #d #e #t #r h ln' g' =
   lctx_incl_append ln ln';
   typing_lctx_ext (typing_weaken_ext h g') (L.append ln ln')
