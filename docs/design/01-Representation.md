@@ -309,7 +309,7 @@ type ctx = {
 
 ### 4.3 The join-point context Δ
 
-`Δ` is a list of triples: the parameter types, the result type, and the ambient effect row of a join point. It holds exactly the join points that a `jump` may target from where it stands. `jump j (ē)` reads the types and the row of `j` from `Δ` and asks nothing else of its position. As in System FJ, `Δ` is relative: the `Δ` of a position depends only on the forms between it and the nearest non-tail position or boundary above it.
+`Δ` is a list of triples: the parameter types, the result type, and the ambient effect row of a join point. It holds exactly the join points that a `jump` may target from where it stands. `jump j (ē)` reads the types and the row of `j` from `Δ` and asks nothing else of its position. `Δ` is relative, in a discipline inspired by System F_J (Maurer, Downen, Ariola, and Peyton Jones, “Compiling without Continuations”, PLDI 2017): the `Δ` of a position depends only on the forms between it and the nearest non-tail position or boundary above it.
 
 - **A non-tail position starts with `Δ = []`.** This covers both sides of an application, the value arguments of a chain, the bound side of `let`, the scrutinees of `case`, the values `θ` of `match`, the condition of `guard`, and the arguments of `jump`. It also covers every subterm of a record or variant operation, the base and payload of a variant value, the argument of `perform`, the value of `writeCell`, the initial values of `region`, and the operands of `[τ]`, `[•]`, and `openEff`.
 - **`letjoin j (x̄ : τ̄) : τ = e1 in e2` adds `j` to the `Δ` it is given**, both for its definition `e1` (under the parameters) and for its continuation `e2`.
@@ -322,6 +322,8 @@ type ctx = {
   - the operand of `fill` and the operand of `openEffC`.
 
 A `jump` to `j` therefore stands under the `letjoin` of `j` in a tail context `Tl` (spec 06 §Evaluation contexts) once the tail-transparent forms between them have reduced, wherever that `letjoin` stands. Reduction keeps this. For example, β-reduction moves the body of a `λ`, typed at `Δ = []`, to the position of the application, and weakening `Δ` (§4.2) types it there.
+
+The discipline is a more direct and conservative variant of the one of F_J. F_J is a call-by-name language in which a jump may discard the evaluation context around it, so it keeps `Δ` in some positions that are not tail positions: the function of an application keeps `Δ`, and only the argument is checked under an empty `Δ`. Here a jump discards no context, and stands only in a `Tl` of its `letjoin`, as the call-by-value semantics has it. So every non-tail premise is checked under `Δ = []`.
 
 `Stella.Core.Typing.Examples.Join` types a β-redex whose `λ` body jumps to its own join point, and its contractum in argument position. It also shows that a jump out of a non-tail position has no type.
 
@@ -414,7 +416,7 @@ Items marked with a Proposal 14 number are the subject of that proposal and not 
 | `region⟨ℓ⟩ θ` requires `dom(θ) = { k̄ }` (spec 06 §Run-time forms). | `θ` holds one value per cell, in the order of the layout. |
 | `F(k)`, the payload a row's normal form holds at `k`, is read off the normal form in the rules for `perform` and the record-field occurrence (spec 05). Here a normal form holds canonical payloads, not types. | The derivation writes a type whose canonical form is the payload and which is kinded at `Type`. Kinding the row makes the entry unique, by sharpness. |
 | The rules give the ambient row no conversion of its own (spec 05 §Basic rules converts types). | `T_Conv` converts the type and the ambient row together, up to type equality. |
-| `jump` requires its own position to be a tail position, while `Δ` is carried unchanged into non-tail positions and emptied only at the boundaries (spec 05 §Join points and decision trees). Reduction does not preserve this. The body of a `λ` may hold `letjoin j … in jump j (…)` with the jump in tail position, and β-reduction can move that body into a non-tail position, such as the argument of another application, where the jump has no type. (Proposal 14 S8.) | `Δ` is relative, as in System FJ: a non-tail position starts with `Δ = []`, and `jump` asks only that its target be in `Δ` (§4.3). |
+| `jump` requires its own position to be a tail position, while `Δ` is carried unchanged into non-tail positions and emptied only at the boundaries (spec 05 §Join points and decision trees). Reduction does not preserve this. The body of a `λ` may hold `letjoin j … in jump j (…)` with the jump in tail position, and β-reduction can move that body into a non-tail position, such as the argument of another application, where the jump has no type. (Proposal 14 S8.) | `Δ` is relative, in a variant of the discipline of System F_J (§4.3): a non-tail position starts with `Δ = []`, and `jump` asks only that its target be in `Δ` (§4.3). |
 
 ### 6.2 Problems found by this formalization and repaired upstream
 
