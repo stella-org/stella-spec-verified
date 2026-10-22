@@ -31,8 +31,9 @@ Proven so far:
 - Typing is preserved by renaming (and hence weakening), term substitution, type substitution, and kind instantiation, under a relative Δ discipline for join points inspired by System F_J.
 - Cut: if Γ ⊨ C and Γ, C ⊢ J, then Γ ⊢ J.
 - Generation lemmas that see through type conversion. Static value forms are values, and a well-typed term jumps only to join points in scope.
-
-Under review: further structural lemmas, and the row algebra (sharpness in consistent contexts, decomposition by key, cancellation).
+- Typing is preserved through the substitutions within reduction (β, `let`, join points, decision trees, and `letrec` allocation which replaces the members with `force ν`).
+- A top-level value, instantiated at any kinds, is typed in every context that keeps the layouts of its regions.
+- Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 
 Planned:
 
