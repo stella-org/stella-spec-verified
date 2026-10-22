@@ -35,6 +35,8 @@ Proven so far:
 - A top-level value, instantiated at any kinds, is typed in every context that keeps the layouts of its regions.
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 
+Under review: the reduction relation of the pure fragment (global environment, evaluation contexts, head rules), typing at a frame, canonical forms, and the soundness of `match` occurrences. The shape of the global environment awaits a revision of the specification for polymorphic foreigns.
+
 Planned:
 
 - Preservation and progress for the pure fragment, then extended to effects, regions and cells, and `letrec` with its store.
