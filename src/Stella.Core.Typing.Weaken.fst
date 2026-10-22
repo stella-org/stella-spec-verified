@@ -166,7 +166,9 @@ let rec assoc_mem (a: atom) (rs: list (atom & layout))
   match rs with
   | (b, _) :: rs' -> if a = b then () else assoc_mem a rs'
 
-let typing_weaken_region #sg #ln #g #d #e #t #r h a l =
+let region_weaker (g: ctx) (a: atom) (l: layout)
+  : Lemma (requires ~(L.mem a (rdom g)))
+          (ensures tm_ren_ok id_ren g ({ g with regions = (a, l) :: g.regions })) =
   let g' = { g with regions = (a, l) :: g.regions } in
   assert (hyps g' == hyps g);
   ctx_ext_refl g;
@@ -176,7 +178,54 @@ let typing_weaken_region #sg #ln #g #d #e #t #r h a l =
   with (match L.assoc b g.regions with
         | Some _ -> assoc_mem b g.regions
         | None -> ());
-  typing_weaken_ext h g'
+  tm_ren_ok_id g g'
+
+let typing_weaken_region #sg #ln #g #d #e #t #r h a l =
+  region_weaker g a l;
+  ren_tm_id e;
+  typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
+
+(* The identity renaming on the lists and trees of the judgements. *)
+
+let rec ren_tm_exps_id (es: list exp) : Lemma (ensures ren_tm_exps id_ren es == es) (decreases es) =
+  match es with
+  | [] -> ()
+  | e :: es' -> ren_tm_id e; ren_tm_exps_id es'
+
+let rec ren_tm_binds_id (bs: list (typ & exp))
+  : Lemma (ensures ren_tm_binds id_ren bs == bs) (decreases bs) =
+  match bs with
+  | [] -> ()
+  | (_, e) :: bs' -> ren_tm_id e; ren_tm_binds_id bs'
+
+let rec ren_tm_cells_id (cs: list (key & exp))
+  : Lemma (ensures ren_tm_cells id_ren cs == cs) (decreases cs) =
+  match cs with
+  | [] -> ()
+  | (_, e) :: cs' -> ren_tm_id e; ren_tm_cells_id cs'
+
+(* A tree is the tree of a `case` with no scrutinee. *)
+let ren_tm_dt_id (dt: dtree) : Lemma (ren_tm_dt id_ren dt == dt) = ren_tm_id (ECase [] dt)
+
+let exps_typing_weaken_region #sg #ln #g #d #r #es #ts h a l =
+  region_weaker g a l;
+  ren_tm_exps_id es;
+  exps_typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
+
+let binds_typing_weaken_region #sg #ln #g #bs h a l =
+  region_weaker g a l;
+  ren_tm_binds_id bs;
+  binds_typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
+
+let cells_typing_weaken_region #sg #ln #g #cells #lay h a l =
+  region_weaker g a l;
+  ren_tm_cells_id cells;
+  cells_typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
+
+let dt_typing_weaken_region #sg #ln #g #d #om #dt #t #r h a l =
+  region_weaker g a l;
+  ren_tm_dt_id dt;
+  dt_typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
 
 (* The location context. *)
 
@@ -341,6 +390,12 @@ and clauses_ln (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#ts: list ty
 let typing_lctx_ext #sg #ln #g #d #e #t #r h ln' = typing_ln h ln'
 
 let exps_typing_lctx_ext #sg #ln #g #d #r #es #ts h ln' = exps_ln h ln'
+
+let binds_typing_lctx_ext #sg #ln #g #bs h ln' = binds_ln h ln'
+
+let cells_typing_lctx_ext #sg #ln #g #cells #lay h ln' = cells_ln h ln'
+
+let dt_typing_lctx_ext #sg #ln #g #d #om #dt #t #r h ln' = dt_ln h ln'
 
 (* Closed terms. *)
 

@@ -23,6 +23,12 @@
  * region. The layout a `region` enters has structural keys by its kinding
  * premise.
  *
+ * Join-point scoping needs no hypothesis (`typing_jp_scoped`): the bound
+ * `|Δ|` comes from the premise of `jump` and the `Δ` each rule gives its
+ * premises, whatever `Γ` is. So do its consequences, the bound on the free
+ * join indices (`typing_jps_below`) and the invariance of a typed value
+ * under join renamings (`typing_value_ren_jp`).
+ *
  * A region body is typed opened with every fresh atom; one of them, outside
  * `rdom g` and the atoms of the body, gives the scope of the body itself
  * (`Stella.Core.Scope.rmap_scope`, `lc_open_inv`, `frn_open_incl`).
@@ -192,18 +198,35 @@ val clauses_typing_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#
   (h: clauses_typing sg ln g ei ts r b cs)
   : Lemma (requires wf_ctx sg g) (ensures cls_scoped g cs)
 
+(** * Join-point scoping, in every context *)
+
+(** A typed term is `jp_scoped |Δ|`, with no hypothesis on `Γ`. *)
+val typing_jp_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r)
+  : Lemma (V.jp_scoped (L.length d) e)
+
+val exps_typing_jp_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ)
+  (h: exps_typing sg ln g d r es ts)
+  : Lemma (V.jp_scoped_exps (L.length d) es)
+
+val dt_typing_jp_scoped (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ)
+  (h: dt_typing sg ln g d om dt t r)
+  : Lemma (V.jp_scoped_dt (L.length d) dt)
+
 (** * Consequences *)
 
 (** The free join indices of a typed term are below `|Δ|`. *)
 val typing_jps_below (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
   (#t #r: typ)
   (h: typing sg ln g d e t r)
-  : Lemma (requires wf_ctx sg g) (ensures jps_below_exp (L.length d) e)
+  : Lemma (jps_below_exp (L.length d) e)
 
 (** A typed value has no free join index, so every join renaming fixes
     it. *)
 val typing_value_ren_jp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
   (#t #r: typ)
   (h: typing sg ln g d v t r) (xi: ren)
-  : Lemma (requires wf_ctx sg g /\ V.is_value sg v)
+  : Lemma (requires V.is_value sg v)
           (ensures V.jp_scoped 0 v /\ ren_jp xi v == v)

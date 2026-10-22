@@ -25,7 +25,8 @@
  * the scrutinees of `case` and the arguments of `jump`, where `jp_scoped`
  * keeps it. The `Δ` of the rules at a position is thus a prefix of the one
  * `jp_scoped` tracks there, its innermost join points, and every
- * well-typed term is `jp_scoped |Δ|`. Scoping is a real restriction on
+ * well-typed term is `jp_scoped |Δ|`
+ * (`Stella.Core.Typing.Scope.typing_jp_scoped`). Scoping is a real restriction on
  * syntax: a `λ` body may syntactically mention a join index bound outside
  * the `λ`, and only the discarding of `Δ` rules that out.
  *

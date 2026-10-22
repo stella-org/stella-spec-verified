@@ -6,7 +6,8 @@
    type binder, an assumption or a region is the term renaming case
    (`Stella.Core.Typing.Rename.Tm`) at the identity between such contexts.
    The substitutes are lifted one entry at a time: a variable is moved to
-   its image, a value is weakened (`Stella.Core.Typing.Weaken`). A
+   its image, a value is weakened (`Stella.Core.Typing.Weaken`), and a
+   `force` is fixed, its closed type with it. A
    telescope is lifted binder by binder, and the substitution of the
    telescope is pointwise the iterated one (`Stella.Core.Subst.Lemmas.Tm`,
    `ren_ren_ty_exp`).
@@ -15,8 +16,9 @@
    `Stella.Core.Typing.Rename.Tm`: each rule of `typing` has a builder that
    takes the substituted premises and concludes the substituted judgement.
    The variable rule is the only one that reads the substitutes: a variable
-   is typed by `T_Var`, a value by `Stella.Core.Typing.Values.value_typing`
-   at the row and the `Δ` of the use. Under every binder the
+   is typed by `T_Var`, a `force` by `T_Force`, a value by
+   `Stella.Core.Typing.Values.value_typing` at the row and the `Δ` of the
+   use. Under every binder the
    well-formedness of `Γ'` is re-established from the kinding premises of
    the rule (`Stella.Core.Typing.Wf`), and that of `Ω` from the occurrence
    and the refinements of a decision tree. *)
@@ -164,6 +166,7 @@ let up_entry (#sg: sig) (#ln: lctx) (#g': ctx) (#e: exp) (#t: typ) (s: sub_entry
   match s with
   | SE_Var j _ -> SE_Var (j + 1) ()
   | SE_Val _ hv -> is_value_ren_tm sg (shift 1) e; SE_Val () (typing_weaken_var hv t')
+  | SE_Force nu _ -> SE_Force nu ()
 
 let up_props (sigma: esub) (g g': ctx) (t: typ)
   : Lemma (requires tm_sub_props sigma g g')
@@ -213,6 +216,11 @@ let tvar_entry (#sg: sig) (#ln: lctx) (#g': ctx) (#e: exp) (#t: typ) (s: sub_ent
     let hv' = typing_weaken_tvar hv k in
     assert_norm (ren_jctx (shift 1) [] == []);
     SE_Val () hv'
+  | SE_Force nu _ ->
+    check_closed_ren sg g'.regions t KType (shift 1);
+    rdom_push_tvar g' k;
+    check_closed_mono sg g'.regions (push_tvar g' k).regions t KType;
+    SE_Force nu ()
 
 let tvar_props (sigma: esub) (g g': ctx) (k: kind)
   : Lemma (requires tm_sub_props sigma g g')
@@ -264,6 +272,7 @@ let tm_sub_ok_assump #sg #ln #sigma #g #g' hs c =
     match f i t0 () with
     | SE_Var j _ -> SE_Var j ()
     | SE_Val _ hv -> SE_Val () (typing_weaken_assumps hv [c])
+    | SE_Force nu _ -> SE_Force nu ()
   in
   TmSubOk () f'
 
@@ -285,6 +294,10 @@ let tm_sub_ok_enter_region #sg #ln #sigma #g #g' hs a l =
     match f i t0 () with
     | SE_Var j _ -> SE_Var j ()
     | SE_Val _ hv -> SE_Val () (typing_weaken_ext hv (enter_region g' a l))
+    | SE_Force nu _ ->
+      rdom_enter_region g' a l;
+      check_closed_mono sg g'.regions (enter_region g' a l).regions t0 KType;
+      SE_Force nu ()
   in
   TmSubOk () f'
 
@@ -346,6 +359,7 @@ let b_var (#sg: sig) (#ln: lctx) (sigma: esub) (g g': ctx) (hs: tm_sub_ok sg ln 
   match f i t () with
   | SE_Var j _ -> cast (T_Var #sg #ln #g' #d #j #t #r () ()) (sub_tm sigma e)
   | SE_Val _ hv -> cast (value_typing hv d r) (sub_tm sigma e)
+  | SE_Force nu _ -> cast (T_Force #sg #ln #g' #d #nu #t #r () ()) (sub_tm sigma e)
 
 let b_global (#sg: sig) (#ln: lctx) (sigma: esub) (g g': ctx) (d: jctx) (e: exp)
   (t r: typ) (q: qname) (ks: list kind) (nk: nat) (t0: typ)

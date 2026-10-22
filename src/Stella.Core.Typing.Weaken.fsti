@@ -12,8 +12,10 @@
  *     and term variables added after the old ones are the identity term
  *     renaming. Adding a region to `regions` is how `Γ_R` grows when a
  *     region is opened (design §4.5);
- *   - more join points in `Δ` is the join renaming `↑1`
- *     (`Stella.Core.Typing.Join.typing_weaken_jp`, which needs `wf_ctx`).
+ *   - more join points in `Δ` is the join renaming `↑m`
+ *     (`Stella.Core.Typing.Join.typing_weaken_jp`, `typing_weaken_jps`),
+ *     and join points appended behind `Δ` change nothing
+ *     (`Stella.Core.Typing.Join.typing_jp_append`).
  *
  * `Γ_N` is a parameter of the judgement, not part of `Γ`, so extending it
  * is a lemma of its own (`typing_lctx_ext`): only `force` and `fill` read
@@ -110,6 +112,30 @@ val typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
          (requires ~(L.mem a (rdom g)))
          (ensures fun _ -> True)
 
+val exps_typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (a: atom) (l: layout)
+  : Pure (exps_typing sg ln ({ g with regions = (a, l) :: g.regions }) d r es ts)
+         (requires ~(L.mem a (rdom g)))
+         (ensures fun _ -> True)
+
+val binds_typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#bs: list (typ & exp))
+  (h: binds_typing sg ln g bs) (a: atom) (l: layout)
+  : Pure (binds_typing sg ln ({ g with regions = (a, l) :: g.regions }) bs)
+         (requires ~(L.mem a (rdom g)))
+         (ensures fun _ -> True)
+
+val cells_typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#cells: list (key & exp))
+  (#lay: layout) (h: cells_typing sg ln g cells lay) (a: atom) (l: layout)
+  : Pure (cells_typing sg ln ({ g with regions = (a, l) :: g.regions }) cells lay)
+         (requires ~(L.mem a (rdom g)))
+         (ensures fun _ -> True)
+
+val dt_typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (a: atom) (l: layout)
+  : Pure (dt_typing sg ln ({ g with regions = (a, l) :: g.regions }) d om dt t r)
+         (requires ~(L.mem a (rdom g)))
+         (ensures fun _ -> True)
+
 (** * The location context `Γ_N` *)
 
 (** `ln'` has the locations of `ln` with their types. *)
@@ -125,6 +151,18 @@ val typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r
 val exps_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
   (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (ln': lctx)
   : Pure (exps_typing sg ln' g d r es ts) (requires lctx_incl ln ln') (ensures fun _ -> True)
+
+val binds_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#bs: list (typ & exp))
+  (h: binds_typing sg ln g bs) (ln': lctx)
+  : Pure (binds_typing sg ln' g bs) (requires lctx_incl ln ln') (ensures fun _ -> True)
+
+val cells_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#cells: list (key & exp))
+  (#lay: layout) (h: cells_typing sg ln g cells lay) (ln': lctx)
+  : Pure (cells_typing sg ln' g cells lay) (requires lctx_incl ln ln') (ensures fun _ -> True)
+
+val dt_typing_lctx_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (ln': lctx)
+  : Pure (dt_typing sg ln' g d om dt t r) (requires lctx_incl ln ln') (ensures fun _ -> True)
 
 (** * Closed terms *)
 

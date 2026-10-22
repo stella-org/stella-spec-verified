@@ -10,8 +10,8 @@
    Each inversion strips the conversions and matches the derivation left,
    whose last rule is the syntax-directed one of the form (`*_rule`): the
    other rules conclude other forms, `T_Chain` a chain, which a λ, a `Λ`, a
-   record or a variant value is not (`not_chain`), and `T_VariantValue` a
-   term with a variant view. The equalities between components then follow
+   record, a variant value or an `openEff` is not (`not_chain`), and
+   `T_VariantValue` a term with a variant view. The equalities between components then follow
    from the injectivity lemmas.
 
    A variant value is inverted by a recursion on the derivation itself
@@ -82,11 +82,11 @@ let rec strip_conv #sg #ln #g #d #e #t #r h
 
 (** * Shapes *)
 
-(** A λ, a `Λ`, a constraint `Λ`, a record or a variant value is no
-    chain. *)
+(** A λ, a `Λ`, a constraint `Λ`, a record, a variant value or an
+    `openEff` is no chain. *)
 let not_chain (sg: sig) (e: exp)
   : Lemma (requires ELam? e \/ ETyLam? e \/ ECLam? e \/ ERecEmpty? e \/ EExtend? e \/
-                    EInject? e \/ EWeaken? e)
+                    EInject? e \/ EWeaken? e \/ EOpenEff? e)
           (ensures chain_cursor sg e == None) = ()
 
 let variant_view_shape (e: exp)
@@ -257,3 +257,33 @@ let inv_variant #sg #ln #g #d #e #t #r h k w rr =
   let p = variant_go h k w rr in
   typing_regular p.vp_h;
   { var_ty = p.vp_ty; var_h = conv_row p.vp_h r; var_facts = () }
+
+(** * Widening the row of a function *)
+
+(** The premises of `T_OpenEff`, at the row of the derivation. *)
+noeq type openeff_prem (sg: sig) (ln: lctx) (g: ctx) (r: typ) (r': typ) (e: exp) = {
+  op_arg: typ;
+  op_row: typ;
+  op_res: typ;
+  op_h: typing sg ln g [] e (t_fun op_arg op_row op_res) r;
+  op_facts: squash (entails (hyps g) (CDisj op_row r') /\ check sg g r' (KRow EEffect));
+}
+
+let openeff_rule (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r': typ) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d (EOpenEff r' e) t r{~(T_Conv? h)})
+  : Pure (openeff_prem sg ln g r r' e)
+         (requires True)
+         (ensures fun p -> t == t_fun p.op_arg (TRowUnion p.op_row r') p.op_res) =
+  not_chain sg (EOpenEff r' e);
+  match h with
+  | T_OpenEff #_ #_ #_ #_ #_ #_ #t1 #r1 #t2 h1 _ ->
+    { op_arg = t1; op_row = r1; op_res = t2; op_h = h1; op_facts = () }
+  | _ -> false_elim ()
+
+let inv_openeff #sg #ln #g #d #r' #e #t #r h q a rho c =
+  typing_regular h;
+  let s = strip_conv h in
+  let p = openeff_rule s.cf_h in
+  ty_eq_fun_ty prim_function q p.op_arg (TRowUnion p.op_row r') p.op_res a rho c;
+  { oe_arg = p.op_arg; oe_row = p.op_row; oe_res = p.op_res;
+    oe_h = conv_row p.op_h r; oe_facts = () }

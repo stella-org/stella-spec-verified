@@ -3,8 +3,8 @@
  * §4.2; spec 05).
  *
  * Each value form inverted here has one rule of its own: `T_Lam`, `T_TyLam`,
- * `T_CLam`, `T_RecEmpty` and `T_Extend`, and for a variant value `T_Inject`
- * and `T_Weaken`, besides `T_VariantValue`. A derivation of such a form is
+ * `T_CLam`, `T_RecEmpty`, `T_Extend` and `T_OpenEff`, and for a variant
+ * value `T_Inject` and `T_Weaken`, besides `T_VariantValue`. A derivation of such a form is
  * one of these rules under a stack of conversions. A global application
  * chain has several derivations, by `T_Chain` and by the nodes `T_Global`,
  * `T_App`, `T_TyApp` and `T_CApp`; `Stella.Core.Typing.Chain` inverts it.
@@ -17,16 +17,18 @@
  *     since `ty_eq` is an equality of canonical forms: every derivation is
  *     a derivation whose last rule is not `T_Conv`, at an equal type and an
  *     equal row (`strip_conv`).
- *   - A derivation of a λ, a `Λ`, a constraint `Λ`, a record or a variant
- *     value at a type equal to one of the matching shape gives the
- *     premises of the form's rule, and the type equalities between the
- *     components of the two types (`inv_lam`, `inv_tylam`, `inv_clam`,
- *     `inv_rec_empty`, `inv_extend`, `inv_variant`).
+ *   - A derivation of a λ, a `Λ`, a constraint `Λ`, a record, a variant
+ *     value or an `openEff` at a type equal to one of the matching shape
+ *     gives the premises of the form's rule, and the type equalities
+ *     between the components of the two types (`inv_lam`, `inv_tylam`,
+ *     `inv_clam`, `inv_rec_empty`, `inv_extend`, `inv_variant`,
+ *     `inv_openeff`).
  *
  * Each inversion takes a derivation at any type `t` equal to the shape,
  * so it applies under conversions and to a derivation at the shape itself
- * alike. The premise derivations of a record or a variant are returned at
- * the ambient row of the given derivation, converted, which needs the
+ * alike. The premise derivations of a record, a variant or an `openEff`
+ * are returned at the ambient row of the given derivation, converted,
+ * which needs the
  * regularity of `Stella.Core.Typing.Regularity` and thus a well-formed `Σ`
  * and `Γ`. The other inversions have no hypothesis.
  *)
@@ -211,3 +213,28 @@ val inv_variant (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: ty
          (requires sig_ok sg /\ wf_ctx sg g /\ variant_view e == Some (k, w) /\
                    ty_eq t (t_variant rr))
          (ensures fun _ -> True)
+
+(** * Widening the row of a function *)
+
+(** The premises of `T_OpenEff` for `openEff [ρ'] e` at a type equal to
+    `a -{ρ}-> c`, at the ambient row `r`: the operand `e` has a function
+    type `oe_arg -{oe_row}-> oe_res` under no join point, `oe_row` and
+    `ρ'` are disjoint, `ρ'` is kinded, and the widened arrow is equal to
+    the given one: `a ≡ oe_arg`, `ρ ≡ ( oe_row | ρ' )`, `c ≡ oe_res`. *)
+noeq type openeff_inv (sg: sig) (ln: lctx) (g: ctx) (r: typ) (r': typ) (e: exp)
+  (a rho c: typ) = {
+  oe_arg: typ;
+  oe_row: typ;
+  oe_res: typ;
+  oe_h: typing sg ln g [] e (t_fun oe_arg oe_row oe_res) r;
+  oe_facts: squash (ty_eq a oe_arg /\ ty_eq rho (TRowUnion oe_row r') /\ ty_eq c oe_res /\
+                    entails (hyps g) (CDisj oe_row r') /\ check sg g r' (KRow EEffect));
+}
+
+(** `openEff [ρ'] e` at a type equal to the function type
+    `fun_ty q a ρ c`, whose constructor `q` is then `Prim.Function`. *)
+val inv_openeff (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r': typ) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d (EOpenEff r' e) t r) (q: qname) (a rho c: typ)
+  : Pure (openeff_inv sg ln g r r' e a rho c)
+         (requires sig_ok sg /\ wf_ctx sg g /\ ty_eq t (fun_ty q a rho c))
+         (ensures fun _ -> q == prim_function)

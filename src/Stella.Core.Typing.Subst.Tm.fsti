@@ -10,21 +10,25 @@
  *
  *   - a term variable of `Γ'` of type `τ`;
  *   - a run-time value (`Stella.Core.Value.is_value`) of type `τ` in `Γ'`,
- *     typed at `()` under no join point.
+ *     typed at `()` under no join point;
+ *   - `force ν`, a location of `Γ_N` of type `τ`, `τ` closed: kinded in
+ *     `closed_ctx` over the regions of `Γ'`, as `T_Force` asks.
  *
  * Reduction substitutes values (spec 06 §Ordinary reduction, §Join points,
- * §Operations and handlers); the variables are what lifting under a term
- * binder adds. Both stand anywhere: a variable is typed at every row, and a
- * value at every kinded row, both under every `Δ`
- * (`Stella.Core.Typing.Values`), so the substituted term keeps the type,
- * the row and the `Δ` of the original. A non-value would not: it may
- * perform an effect, or jump.
+ * §Operations and handlers), and the allocation of a `letrec` substitutes
+ * `force ν̄` for its members (spec 06 §Recursive bindings); the variables
+ * are what lifting under a term binder adds. All three stand anywhere:
+ * each is typed at every well-kinded row and under every `Δ` (`T_Var`,
+ * `T_Force`, `Stella.Core.Typing.Values`), so the substituted term keeps
+ * the type, the row and the `Δ` of the original. Another non-value would
+ * not: it may perform an effect, or jump.
  *
  * The substitute at every index, not only at the variables of `Γ`, is
  * locally closed for regions and has no free join point (`tm_sub_props`;
  * design §3.1, §4.3): opening a region and crossing a join binder act on
  * the whole substitution. A value typed in a well-formed `Γ'` has both by
- * its scope (`Stella.Core.Typing.Scope`), and a variable has both.
+ * its scope (`Stella.Core.Typing.Scope`), and a variable and a `force`
+ * have both.
  *
  * The condition carries the derivations of the values, so it is data. It
  * is re-established under every binder of the rules:
@@ -32,10 +36,12 @@
  *   - a term binder or a telescope (`upn_esub`): the new variables are
  *     themselves, the old substitutes are shifted past them;
  *   - a type binder or a telescope (`tyup_esub`): the substitutes are
- *     shifted in their types, the types of both contexts likewise;
+ *     shifted in their types, the types of both contexts likewise; the
+ *     closed type of a `force` is fixed (`check_closed_ren`);
  *   - a join binder (`jup_esub`): a substitute has no free join point, so
  *     the shift fixes it;
- *   - an assumption, and a region entered with an atom outside `Γ'`.
+ *   - an assumption, and a region entered with an atom outside `Γ'`; the
+ *     closed type of a `force` stays closed as the regions grow.
  *
  * The excluded set of the cofinite premise of `region` grows: the atoms of
  * a term are among those of its image (`Stella.Core.Typing.Subst.Tm.Facts`),
@@ -80,6 +86,10 @@ noeq type sub_entry (sg: sig) (ln: lctx) (g': ctx) (e: exp) (t: typ) : Type =
   | SE_Val :
       squash (V.is_value sg e) ->
       typing sg ln g' [] e t TRowEmpty ->
+      sub_entry sg ln g' e t
+  | SE_Force :
+      nu:atom ->
+      squash (e == EForce nu /\ L.nth ln nu == Some t /\ check sg (closed_ctx g'.regions) t KType) ->
       sub_entry sg ln g' e t
 
 (** The conditions on the contexts and on the syntax of every

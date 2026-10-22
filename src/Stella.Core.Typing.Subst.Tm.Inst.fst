@@ -10,7 +10,12 @@
    value is the telescope of one binder, `subst1_tm v` being pointwise
    `list_esub [v]`. The contractum of β is substituted under no join
    point, then moved to the `Δ` of the redex
-   (`Stella.Core.Typing.Join.typing_jp_nil`). *)
+   (`Stella.Core.Typing.Join.typing_jp_nil`).
+
+   The members of a `letrec` take `force`s the same way: index `i` of the
+   reversed list is the member `m - 1 - i` of the group, so its location is
+   `n0 + m - 1 - i`, whose type is the type at position `i` of the
+   reversed telescope (`rev_index`). *)
 module Stella.Core.Typing.Subst.Tm.Inst
 open Stella.Core.Syntax
 open Stella.Core.Subst
@@ -71,6 +76,21 @@ let rec index_append_last (#a: Type) (l1: list a) (x: a)
 let rev_cons (#a: Type) (x: a) (l: list a) : Lemma (L.rev (x :: l) == L.append (L.rev l) [x]) =
   LP.rev_rev' (x :: l);
   LP.rev_rev' l
+
+let rec rev_index (#a: Type) (l: list a) (i: nat)
+  : Lemma (requires i < L.length l)
+          (ensures L.length (L.rev l) == L.length l /\
+                   L.index (L.rev l) i == L.index l (L.length l - 1 - i))
+          (decreases l) =
+  LP.rev_length l;
+  match l with
+  | x :: l' ->
+    rev_cons x l';
+    LP.rev_length l';
+    if i < L.length l' then begin
+      index_append_left (L.rev l') [x] i;
+      rev_index l' i
+    end else index_append_last (L.rev l') x
 
 (* The context of a telescope. *)
 
@@ -195,3 +215,59 @@ let dt_typing_bind_value #sg #ln #g #t_o #d #om #dt #t #r h #d0 #v #r0 hv =
   subst1_list v;
   sub_tm_dt_ext (list_esub (L.rev [v])) (scons v evar) dt;
   dt_typing_sub_tm h hs
+
+(* The locations of a group. *)
+
+let rec forces_index (n0 m: nat) (j: nat)
+  : Lemma (ensures L.length (forces n0 m) == m /\
+                   (j < m ==> L.index (forces n0 m) j == EForce (n0 + j)))
+          (decreases m) =
+  if m = 0 then () else forces_index (n0 + 1) (m - 1) (if j = 0 then 0 else j - 1)
+
+let rec tys_ok_index (sg: sig) (g: ctx) (ts: list typ) (j: nat)
+  : Lemma (requires tys_ok sg g ts /\ j < L.length ts) (ensures check sg g (L.index ts j) KType)
+          (decreases ts) =
+  match ts with
+  | _ :: ts' -> if j = 0 then () else tys_ok_index sg g ts' (j - 1)
+
+let locs_at_append ln ts =
+  introduce forall (i: nat). i < L.length ts ==> L.nth (L.append ln ts) (L.length ln + i) == L.nth ts i
+  with nth_append ln ts (L.length ln + i)
+
+let forces_sub_ok (sg: sig) (ln: lctx) (g: ctx) (ts: list typ) (n0: nat)
+  : Pure (tm_sub_ok sg ln (list_esub (L.rev (forces n0 (L.length ts)))) (push_vars g ts) g)
+         (requires locs_at ln n0 ts /\ tys_ok sg (closed_ctx g.regions) ts)
+         (ensures fun _ -> True) =
+  let n = L.length ts in
+  let fs = forces n0 n in
+  let sigma = list_esub (L.rev fs) in
+  forces_index n0 n 0;
+  LP.rev_length fs;
+  LP.rev_length ts;
+  push_vars_shape g ts;
+  push_vars_ext g ts;
+  let sub_at (i: nat{i < n}) : Lemma (sigma i == EForce (n0 + (n - 1 - i))) =
+    rev_index fs i;
+    forces_index n0 n (n - 1 - i)
+  in
+  introduce forall (i: nat). V.jp_scoped 0 (sigma i) /\ lc_exp (sigma i)
+  with (if i < n then sub_at i else ());
+  let f (i: nat) (t: typ) (_: squash (L.nth (push_vars g ts).vars i == Some t))
+    : sub_entry sg ln g (sigma i) t =
+    nth_append (L.rev ts) g.vars i;
+    if i < n then begin
+      nth_index (L.rev ts) i;
+      rev_index ts i;
+      nth_index ts (n - 1 - i);
+      tys_ok_index sg (closed_ctx g.regions) ts (n - 1 - i);
+      sub_at i;
+      SE_Force (n0 + (n - 1 - i)) ()
+    end else SE_Var (i - n) ()
+  in
+  TmSubOk () f
+
+let typing_subst_forces #sg #ln #g #ts #d #e #t #r h n0 =
+  typing_sub_tm h (forces_sub_ok sg ln g ts n0)
+
+let binds_typing_subst_forces #sg #ln #g #ts #bs h n0 =
+  binds_typing_sub_tm h (forces_sub_ok sg ln g ts n0)

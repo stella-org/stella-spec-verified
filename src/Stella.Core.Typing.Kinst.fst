@@ -51,6 +51,7 @@ open Stella.Core.Typing.Rename.Ty
 open Stella.Core.Typing.Rename.Tm
 open Stella.Core.Typing.Weaken
 open Stella.Core.Typing.Kinst.Facts
+open Stella.Core.Typing.Values
 module L = FStar.List.Tot
 module LP = FStar.List.Tot.Properties
 module V = Stella.Core.Value
@@ -1422,17 +1423,61 @@ let clauses_typing_kinst #sg #ln #g #ei #ts #r #b #cs h q ks nk' = clauses_typin
 
 (* Unfolding a global. *)
 
-let typing_decl_kinst #sg #ln #nk #v #t h ks nk' =
+let rec kinst_layout_closed (sg: sig) (rs: list (atom & layout)) (ks: list kind) (l: layout)
+  : Lemma (requires layout_ok sg (closed_ctx rs) l) (ensures kinst_layout ks l == l)
+          (decreases l) =
+  match l with
+  | [] -> ()
+  | (_, t) :: l' -> check_closed_kinst sg rs t KType ks; kinst_layout_closed sg rs ks l'
+
+let rec kinst_regions_closed (sg: sig) (rs0: list (atom & layout)) (ks: list kind)
+  (rs: list (atom & layout))
+  : Lemma (requires regions_ok sg (closed_ctx rs0) rs) (ensures L.map (kinst_region ks) rs == rs)
+          (decreases rs) =
+  match rs with
+  | [] -> ()
+  | (_, l) :: rs' -> kinst_layout_closed sg rs0 ks l; kinst_regions_closed sg rs0 ks rs'
+
+let kinst_decl_rctx (sg: sig) (ks: list kind) (nk' nk: nat) (rs: list (atom & layout))
+  : Lemma (requires wf_ctx sg (closed_ctx rs))
+          (ensures kinst_ctx ks nk' (decl_rctx nk rs) == decl_rctx nk' rs) =
   kinst_decl_ctx ks nk' nk;
+  kinst_regions_closed sg rs ks rs
+
+let typing_decl_kinst #sg #ln #nk #rs #v #t h ks nk' =
+  kinst_decl_rctx sg ks nk' nk rs;
   typing_kinst' h ks nk'
 
-let decl_ren_ok (n: nat) (g: ctx) : Lemma (requires g.nk == n) (ensures ty_ren_ok id_ren (decl_ctx n) g) =
-  ()
+let rec ren_layout_id (l: layout) : Lemma (ensures ren_layout id_ren l == l) (decreases l) =
+  match l with
+  | [] -> ()
+  | (_, t) :: l' -> ren_ty_id t; ren_layout_id l'
 
-let typing_global_unfold #sg #ln #nk #v #t h ks g =
+let decl_ren_ok (n: nat) (rs: list (atom & layout)) (g: ctx)
+  : Lemma (requires g.nk == n /\ layouts_ext (closed_ctx rs) g)
+          (ensures ty_ren_ok id_ren (decl_rctx n rs) g) =
+  introduce forall (a: atom). (match L.assoc a rs with
+                               | Some l -> L.assoc a g.regions == Some (ren_layout id_ren l)
+                               | None -> True)
+  with (match L.assoc a rs with
+        | Some l -> assert (L.assoc a (closed_ctx rs).regions == Some l); ren_layout_id l
+        | None -> ());
+  introduce forall (a: atom). L.mem a (rdom (decl_rctx n rs)) ==> L.mem a (rdom g)
+  with introduce _ ==> _
+  with begin
+    LP.assoc_mem a rs;
+    let l = FStar.IndefiniteDescription.indefinite_description_ghost layout
+              (fun l -> L.assoc a rs == Some l) in
+    assert (L.assoc a (closed_ctx rs).regions == Some l);
+    LP.assoc_mem a g.regions
+  end
+
+let typing_global_unfold #sg #ln #nk #rs #v #t h ks g d r =
   let h1 = typing_decl_kinst h ks g.nk in
-  decl_ren_ok g.nk g;
+  decl_ren_ok g.nk rs g;
   let h2 = typing_ren_ty h1 id_ren g in
   ren_ty_exp_id (kinst_exp ks v);
   ren_ty_id (kinst_ty ks t);
-  h2
+  is_value_kinst sg ks v;
+  let h3 : typing sg ln g [] (kinst_exp ks v) (kinst_ty ks t) TRowEmpty = h2 in
+  value_typing h3 d r

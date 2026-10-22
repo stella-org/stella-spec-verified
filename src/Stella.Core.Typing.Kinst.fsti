@@ -30,6 +30,12 @@
  *     (`Stella.Core.Typing.Kinst.Init`), and the value forms, the values
  *     and the value at an occurrence are kept
  *     (`Stella.Core.Typing.Kinst.Facts`).
+ *
+ * The unfolding of a global (`typing_global_unfold`) instantiates a
+ * definition typed in its declaration context with closed regions in
+ * scope (`decl_rctx`), and carries the instance, a value, into any
+ * well-formed context with those regions, under any `Δ` and at any kinded
+ * row.
  *)
 module Stella.Core.Typing.Kinst
 open Stella.Core.Syntax
@@ -41,7 +47,9 @@ open Stella.Core.Kinding
 open Stella.Core.Kinding.Subst
 open Stella.Core.Typing.Aux
 open Stella.Core.Typing
+open Stella.Core.Typing.Rename.Tm
 module L = FStar.List.Tot
+module V = Stella.Core.Value
 
 (** * Instantiating the contexts of the judgement *)
 
@@ -162,23 +170,46 @@ val clauses_typing_kinst (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#t
 
 (** * Unfolding a global *)
 
-(** A definition `v : σ` of a declaration with `nk` kind variables, typed
-    in its declaration context, instantiated at kinds `κ̄` of `nk'` kind
-    variables. *)
-val typing_decl_kinst (#sg: sig) (#ln: lctx) (#nk: nat) (#v: exp) (#t: typ)
-  (h: typing sg ln (decl_ctx nk) [] v t TRowEmpty) (ks: list kind) (nk': nat)
-  : Pure (typing sg ln (decl_ctx nk') [] (kinst_exp ks v) (kinst_ty ks t) TRowEmpty)
-         (requires sig_ok sg /\ L.length ks == nk /\ qkinds_wf nk' ks)
+(** The context a definition of `Σ` with `nk` kind variables is typed in
+    at run time: its declaration context with the regions `rs` of `Γ_R`
+    in scope, which a value installed at link time may mention, in a region
+    frame or in the type of a location it forces. `decl_rctx nk []` is
+    `decl_ctx nk`. *)
+let decl_rctx (nk: nat) (rs: list (atom & layout)) : ctx = { decl_ctx nk with regions = rs }
+
+(** A definition `v : σ` typed in `decl_rctx nk rs`, instantiated at
+    kinds `κ̄` of `nk'` kind variables. The layouts of `rs` are closed,
+    well formed in `closed_ctx rs` (`wf_ctx sg (closed_ctx rs)`, which
+    `Stella.Core.Typing.Runtime.rctx_ok_wf_ctx` gives), so the instantiation
+    fixes them (`Stella.Core.Typing.Aux.Lemmas.check_closed_kinst`). *)
+val typing_decl_kinst (#sg: sig) (#ln: lctx) (#nk: nat) (#rs: list (atom & layout))
+  (#v: exp) (#t: typ)
+  (h: typing sg ln (decl_rctx nk rs) [] v t TRowEmpty) (ks: list kind) (nk': nat)
+  : Pure (typing sg ln (decl_rctx nk' rs) [] (kinst_exp ks v) (kinst_ty ks t) TRowEmpty)
+         (requires sig_ok sg /\ L.length ks == nk /\ qkinds_wf nk' ks /\
+                   wf_ctx sg (closed_ctx rs))
          (ensures fun _ -> True)
 
-(** The shape the unfolding `M.x [[κ̄]] → v[k̄ := κ̄]` reads (spec 06 §The
-    global environment): `v[k̄ := κ̄] : σ[k̄ := κ̄]` in every context whose
-    kind variables the kinds `κ̄` are formed under. A term typed in a
-    declaration context mentions no type variable, term variable,
-    hypothesis or region, so the identity type renaming carries it into
-    any such context (`Stella.Core.Typing.Rename.Ty`). *)
-val typing_global_unfold (#sg: sig) (#ln: lctx) (#nk: nat) (#v: exp) (#t: typ)
-  (h: typing sg ln (decl_ctx nk) [] v t TRowEmpty) (ks: list kind) (g: ctx)
-  : Pure (typing sg ln g [] (kinst_exp ks v) (kinst_ty ks t) TRowEmpty)
-         (requires sig_ok sg /\ L.length ks == nk /\ qkinds_wf g.nk ks)
+(** The unfolding `M.x [[κ̄]] → v[k̄ := κ̄]` (spec 06 §The global
+    environment): the definition `v : σ`, a value typed in
+    `decl_rctx nk rs`, gives `v[k̄ := κ̄] : σ[k̄ := κ̄]` in every
+    well-formed context `g` whose kind variables the kinds `κ̄` are formed
+    under and which has the regions of `rs` with their layouts
+    (`layouts_ext`): the regions in scope at the unfolding may extend those
+    at the definition. It stands under any `Δ` and at any kinded ambient
+    row `r`.
+
+    The instance mentions no type variable, term variable or hypothesis,
+    so the identity type renaming carries it into `g`
+    (`Stella.Core.Typing.Rename.Ty`); it is a value
+    (`Stella.Core.Typing.Kinst.Facts.is_value_kinst`), retyped at `Δ` and
+    `r` (`Stella.Core.Typing.Values.value_typing`). *)
+val typing_global_unfold (#sg: sig) (#ln: lctx) (#nk: nat) (#rs: list (atom & layout))
+  (#v: exp) (#t: typ)
+  (h: typing sg ln (decl_rctx nk rs) [] v t TRowEmpty) (ks: list kind) (g: ctx) (d: jctx)
+  (r: typ)
+  : Pure (typing sg ln g d (kinst_exp ks v) (kinst_ty ks t) r)
+         (requires sig_ok sg /\ wf_ctx sg g /\ L.length ks == nk /\ qkinds_wf g.nk ks /\
+                   V.is_value sg v /\ wf_ctx sg (closed_ctx rs) /\
+                   layouts_ext (closed_ctx rs) g /\ check sg g r (KRow EEffect))
          (ensures fun _ -> True)

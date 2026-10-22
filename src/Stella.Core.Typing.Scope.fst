@@ -10,13 +10,16 @@
    The induction carries `layouts_struct g.regions` alone, which `wf_ctx`
    implies (`wf_ctx_layouts_struct`) and every context a rule extends to
    keeps without any kinding hypothesis; the stated theorems take `wf_ctx`.
-   `Stella.Core.Typing.Join` is a friend, for the same induction over the
-   judgements that carry `Δ`.
 
    Under a binder, the subderivation's context differs from `g` in one
    component only, whose size the scope bound follows; the region domain
    changes only on entering a region. A region body is read at one fresh
-   atom, `fresh_atom (rdom g @ frn_exp body)`. *)
+   atom, `fresh_atom (rdom g @ frn_exp body)`.
+
+   Join-point scoping alone is a second, smaller mutual induction with no
+   hypothesis at all: it reads the premise of `jump` and the `Δ` of each
+   premise, never a kinding or a layout. The consequences on join indices
+   (`typing_jps_below`, `typing_value_ren_jp`) follow from it. *)
 module Stella.Core.Typing.Scope
 open Stella.Core.Syntax
 open Stella.Core.Subst
@@ -727,19 +730,163 @@ let clauses_typing_scoped #sg #ln #g #ei #ts #r #b #cs h =
   wf_ctx_layouts_struct sg g;
   clauses_typing_scoped' h
 
+(* Join-point scoping alone. It reads nothing of the context: the bound
+   of a `jump` is `|Δ|` by its premise, and every other rule either keeps
+   `Δ` or types its subterm under `Δ = []`, whose scope under no join point
+   is a scope under any number. A region body is read at any atom, since
+   opening a region moves no join index. *)
+
+let any_fresh (g: ctx) (body: exp) : a:atom{~(L.mem a (rdom g)) /\ ~(L.mem a (frn_exp body))} =
+  fresh_for g body
+
+let rec typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d e t r)
+  : Lemma (ensures V.jp_scoped (L.length d) e) (decreases h) =
+  let n = L.length d in
+  match h with
+  | T_Var _ _ | T_Global _ _ _ | T_Lit _ -> ()
+  | T_Lam _ _ hb -> typing_jp_scoped' hb
+  | T_App #_ #_ #_ #_ #e1 #e2 h1 h2 ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2;
+    V.jp_scoped_mono 0 n e1; V.jp_scoped_mono 0 n e2
+  | T_Chain hc _ -> chain_typing_jp_scoped' hc; V.jp_scoped_mono 0 n e
+  | T_TyLam _ _ _ hb -> typing_jp_scoped' hb
+  | T_TyApp #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_CLam _ _ _ hb -> typing_jp_scoped' hb
+  | T_CApp #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Let #_ #_ #_ #_ #_ #e1 _ h1 h2 ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2; V.jp_scoped_mono 0 n e1
+  | T_LetRec _ hbs hb -> binds_typing_jp_scoped' hbs; typing_jp_scoped' hb
+  | T_Conv h1 _ _ -> typing_jp_scoped' h1
+  | T_Case #_ #_ #_ #_ #es hes hdt ->
+    exps_typing_jp_scoped' hes; jp_scoped_mono_exps 0 n es; dt_typing_jp_scoped' hdt
+  | T_LetJoin _ h1 h2 -> typing_jp_scoped' h1; typing_jp_scoped' h2
+  | T_Jump #_ #_ #_ #_ #j #es _ _ hes ->
+    nth_lt d j; exps_typing_jp_scoped' hes; jp_scoped_mono_exps 0 n es
+  | T_RecEmpty _ -> ()
+  | T_Extend #_ #_ #_ #_ #_ #e1 #e2 h1 h2 _ ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2;
+    V.jp_scoped_mono 0 n e1; V.jp_scoped_mono 0 n e2
+  | T_Select #_ #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Restrict #_ #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Update #_ #_ #_ #_ #_ #e1 #e2 h1 h2 _ ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2;
+    V.jp_scoped_mono 0 n e1; V.jp_scoped_mono 0 n e2
+  | T_Merge #_ #_ #_ #_ #e1 #e2 h1 h2 _ ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2;
+    V.jp_scoped_mono 0 n e1; V.jp_scoped_mono 0 n e2
+  | T_Inject #_ #_ #_ #_ #_ #_ #e1 h1 _ _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Weaken #_ #_ #_ #_ #_ #_ #e1 h1 _ _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_VariantValue _ _ h1 _ _ _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e
+  | T_Absurd #_ #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Perform #_ #_ #_ #_ #_ #_ #_ #e1 _ _ _ _ h1 -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Handle _ _ _ _ h1 h2 hcl ->
+    typing_jp_scoped' h1; typing_jp_scoped' h2; clauses_typing_jp_scoped' hcl
+  | T_OpenEff #_ #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Region #_ #_ #_ #_ #_ #es #body _ _ hes hbody ->
+    exps_typing_jp_scoped' hes; jp_scoped_mono_exps 0 n es;
+    let a = any_fresh g body in
+    typing_jp_scoped' (hbody a);
+    rmap_scope (open_rr a) 0 0 0 0 body
+  | T_ReadCell _ _ _ -> ()
+  | T_WriteCell #_ #_ #_ #_ #_ #_ #e1 _ _ h1 -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Match #_ #_ #_ #_ #th _ hes _ _ hdt ->
+    exps_typing_jp_scoped' hes; jp_scoped_mono_exps 0 n th; dt_typing_jp_scoped' hdt
+  | T_OpenEffC #_ #_ #_ #_ #_ #e1 h1 _ -> typing_jp_scoped' h1; V.jp_scoped_mono 0 n e1
+  | T_Force _ _ -> ()
+  | T_Fill _ _ h1 -> typing_jp_scoped' h1
+  | T_RegionOpen _ _ _ hc hb -> cells_typing_jp_scoped' hc; typing_jp_scoped' hb
+  | T_Opaque _ _ -> ()
+
+and exps_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts)
+  : Lemma (ensures V.jp_scoped_exps (L.length d) es) (decreases h) =
+  match h with
+  | TE_Nil _ -> ()
+  | TE_Cons h1 h2 -> typing_jp_scoped' h1; exps_typing_jp_scoped' h2
+
+and chain_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#e: exp)
+  (h: chain_typing sg ln g d r e)
+  : Lemma (ensures V.jp_scoped (L.length d) e) (decreases h) =
+  match h with
+  | TS_Head _ _ _ -> ()
+  | TS_Ty h0 _ _ -> chain_typing_jp_scoped' h0
+  | TS_Constr h0 _ _ -> chain_typing_jp_scoped' h0
+  | TS_Val h0 _ hv -> chain_typing_jp_scoped' h0; typing_jp_scoped' hv
+
+and binds_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#bs: list (typ & exp))
+  (h: binds_typing sg ln g bs)
+  : Lemma (ensures V.jp_scoped_binds 0 bs) (decreases h) =
+  match h with
+  | TB_Nil -> ()
+  | TB_Cons _ h1 h2 -> typing_jp_scoped' h1; binds_typing_jp_scoped' h2
+
+and cells_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#th: list (key & exp))
+  (#lay: layout) (h: cells_typing sg ln g th lay)
+  : Lemma (ensures V.jp_scoped_cells 0 th) (decreases h) =
+  match h with
+  | TC_Nil -> ()
+  | TC_Cons _ h1 h2 -> typing_jp_scoped' h1; cells_typing_jp_scoped' h2
+
+and dt_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r)
+  : Lemma (ensures V.jp_scoped_dt (L.length d) dt) (decreases h) =
+  match h with
+  | TD_Leaf h1 -> typing_jp_scoped' h1
+  | TD_Bind _ hdt -> dt_typing_jp_scoped' hdt
+  | TD_SwitchCtor _ _ _ _ _ _ _ _ hbr -> ctor_brs_typing_jp_scoped' hbr
+  | TD_SwitchCtorDef _ _ _ _ _ _ _ _ hbr hdf ->
+    ctor_brs_typing_jp_scoped' hbr; dt_typing_jp_scoped' hdf
+  | TD_SwitchLit _ _ _ _ hbr hdf -> lit_brs_typing_jp_scoped' hbr; dt_typing_jp_scoped' hdf
+  | TD_SwitchKey _ _ _ _ _ _ hbr -> key_brs_typing_jp_scoped' hbr
+  | TD_SwitchKeyDef _ _ _ _ _ _ _ hbr hdf ->
+    key_brs_typing_jp_scoped' hbr; dt_typing_jp_scoped' hdf
+  | TD_Guard #_ #_ #_ #_ #_ #e1 h1 h2 h3 ->
+    typing_jp_scoped' h1; dt_typing_jp_scoped' h2; dt_typing_jp_scoped' h3;
+    V.jp_scoped_mono 0 (L.length d) e1
+
+and ctor_brs_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#o: occ) (#ks: list kind) (#ss: list typ) (#cs: list qname) (#bs: list (qname & dtree))
+  (#t #r: typ) (h: ctor_brs_typing sg ln g d om o ks ss cs bs t r)
+  : Lemma (ensures V.jp_scoped_brs (L.length d) bs) (decreases h) =
+  match h with
+  | TCB_Nil _ -> ()
+  | TCB_Cons _ hdt h2 -> dt_typing_jp_scoped' hdt; ctor_brs_typing_jp_scoped' h2
+
+and lit_brs_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#lt: typ) (#bs: list (lit & dtree)) (#t #r: typ) (h: lit_brs_typing sg ln g d om lt bs t r)
+  : Lemma (ensures V.jp_scoped_brs (L.length d) bs) (decreases h) =
+  match h with
+  | TLB_Nil _ -> ()
+  | TLB_Cons _ hdt h2 -> dt_typing_jp_scoped' hdt; lit_brs_typing_jp_scoped' h2
+
+and key_brs_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#o: occ) (#kts: list (key & typ)) (#bs: list (key & dtree)) (#t #r: typ)
+  (h: key_brs_typing sg ln g d om o kts bs t r)
+  : Lemma (ensures V.jp_scoped_brs (L.length d) bs) (decreases h) =
+  match h with
+  | TKB_Nil _ -> ()
+  | TKB_Cons _ hdt h2 -> dt_typing_jp_scoped' hdt; key_brs_typing_jp_scoped' h2
+
+and clauses_typing_jp_scoped' (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info) (#ts: list typ)
+  (#r #b: typ) (#cs: list clause) (h: clauses_typing sg ln g ei ts r b cs)
+  : Lemma (ensures V.jp_scoped_cls 0 cs) (decreases h) =
+  match h with
+  | TCL_Nil _ -> ()
+  | TCL_Full _ _ _ hb h2 -> typing_jp_scoped' hb; clauses_typing_jp_scoped' h2
+  | TCL_Fast _ _ hb h2 -> typing_jp_scoped' hb; clauses_typing_jp_scoped' h2
+
+let typing_jp_scoped #sg #ln #g #d #e #t #r h = typing_jp_scoped' h
+
+let exps_typing_jp_scoped #sg #ln #g #d #r #es #ts h = exps_typing_jp_scoped' h
+
+let dt_typing_jp_scoped #sg #ln #g #d #om #dt #t #r h = dt_typing_jp_scoped' h
+
 let typing_jps_below #sg #ln #g #d #e #t #r h =
-  wf_ctx_layouts_struct sg g;
-  typing_scoped' h;
+  typing_jp_scoped' h;
   jp_scoped_jps_below (L.length d) (L.length d) e
 
-let typing_value_ren_jp' (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp)
-  (#t #r: typ) (h: typing sg ln g d v t r) (xi: ren)
-  : Lemma (requires layouts_struct g.regions /\ V.is_value sg v)
-          (ensures V.jp_scoped 0 v /\ ren_jp xi v == v) =
-  typing_scoped' h;
+let typing_value_ren_jp #sg #ln #g #d #v #t #r h xi =
+  typing_jp_scoped' h;
   V.value_jp_scoped sg (L.length d) v;
   V.value_ren_jp sg 0 xi v
-
-let typing_value_ren_jp #sg #ln #g #d #v #t #r h xi =
-  wf_ctx_layouts_struct sg g;
-  typing_value_ren_jp' h xi

@@ -16,8 +16,10 @@
  *
  * So the substituted group reads, before a right-hand side has a value,
  * only members the group reads there: a safe group stays safe. The
- * substitutes need not be values. A typed value under no join point has no
- * free join index (`Stella.Core.Typing.Scope`).
+ * substitutes need not be values: a `force ν`, which the allocation of a
+ * `letrec` substitutes for its members, has no free join index either, and
+ * neither has a typed value under no join point
+ * (`Stella.Core.Typing.Scope`).
  *)
 module Stella.Core.Typing.Subst.Tm.Init
 open Stella.Core.Syntax
