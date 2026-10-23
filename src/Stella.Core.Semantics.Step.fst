@@ -11,6 +11,7 @@ open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
 open Stella.Core.Spine
+open Stella.Core.Erase
 open Stella.Core.Typing.Aux
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
@@ -20,7 +21,7 @@ module V = Stella.Core.Value
 
 let value_no_pure_head #sg #gi #e #c h =
   match h with
-  | PH_Foreign _ _ _ -> V.foreign_redex_not_value sg e
+  | PH_Foreign _ _ _ _ -> V.foreign_redex_not_value sg e
   | _ -> ()
 
 let rec step_plug #sg #gi #ra #st #e #ra' #st' #e' fs h
@@ -127,7 +128,7 @@ let rec value_no_step #sg #gi #ra #st #e #ra' #st' #c h
 let pure_head_fault (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (ph: pure_head sg gi e c)
   : Lemma (requires CFault? c) (ensures exists (a: abi_fault). c == CFault (FAbi a) /\ foreign_faults sg gi e a) =
   match ph with
-  | PH_Foreign #_ #_ #_ #q #ks #args #f #o _ _ _ ->
+  | PH_Foreign #_ #_ #_ #q #ks #args #fe #o _ _ _ _ ->
     (match o with
      | FOFault a -> assert (c == CFault (FAbi a) /\ foreign_faults sg gi e a)
      | FOVal _ -> ())

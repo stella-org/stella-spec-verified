@@ -77,6 +77,7 @@ open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
 open Stella.Core.Spine
+open Stella.Core.Erase
 open Stella.Core.Typing.Aux
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
@@ -223,19 +224,30 @@ noeq type pure_head (sg: sig) (gi: genv) : exp -> config -> Type =
       squash (gi.gvals q == Some v) ->
       pure_head sg gi (EGlobal q ks) (CTerm (kinst_exp ks v))
 
-  (** `M.f [[κ̄]] ᾱ  →  δ_f(values(ᾱ))` for a saturated chain of values of
-      a foreign (`foreign_redex`) whose values satisfy the ABI
-      precondition `gpre M.f`, where `δ_f` exists and returns an outcome
-      on them: a value as a term, an ABI fault as a fault
-      (`foreign_config`). A call outside `gpre` has no step, whatever
-      `δ_f` returns on it, and neither has one on which `δ_f` returns
-      `None` (spec 06 §Chains of a constructor or a foreign). *)
+  (** `M.f [[κ̄]] ᾱ  →  δᵀ_f(instance(M.f [[κ̄]] ᾱ), values(ᾱ))` for a
+      saturated chain of values of a foreign (`foreign_redex`) with an entry
+      `fe` in `G`, whose erased values `⌊values(ᾱ)⌋` satisfy the erased
+      precondition `fe_pre`, where the typed adapter returns an outcome on
+      the instance of the chain (`chain_instance`) and its values: a value
+      as a term, an ABI fault as a fault (`foreign_config`). The instance is
+      read and not passed on: the erased function `fe_erased` is not
+      consulted, and erasure coherence (condition (3) of `genv_ok`) is what
+      ties the outcome to it. A call outside `fe_pre` has no step, whatever
+      the adapter returns on it, and neither has one on which the adapter
+      returns `None` (spec 06 §Chains of a constructor or a foreign).
+
+      The rule of spec 06 also has the premise that `G` is Core-modelled.
+      The relation here is defined for every `G` of this shape, and that
+      premise is clause (d) of the correspondence contract with the
+      definedness of both functions, which `genv_ok` asks and every
+      theorem assumes. *)
   | PH_Foreign :
       #e:exp -> #q:qname -> #ks:list kind -> #args:list spine_arg ->
-      #f:(list exp -> option foreign_outcome) -> #o:foreign_outcome ->
+      #fe:foreign_entry -> #o:foreign_outcome ->
       squash (V.foreign_redex sg e /\ decompose_global_app e == Some (q, ks, args)) ->
-      squash (gi.gpre q (value_args args)) ->
-      squash (gi.gimpl q == Some f /\ f (value_args args) == Some o) ->
+      squash (gi.gforeign q == Some fe) ->
+      squash (fe.fe_pre (L.map erase (value_args args))) ->
+      squash (fe.fe_adapt (chain_instance e) (value_args args) == Some o) ->
       pure_head sg gi e (foreign_config o)
 
   (* -- Pattern matching (spec 06 §Pattern matching) -- *)
@@ -389,28 +401,34 @@ let stage5_frag (e: exp) : bool = exp_all stage5_node e
 
 (** * Preconditions *)
 
-(** The call of the chain `r = M.f [[κ̄]] ᾱ` respects the ABI precondition
-    of `M.f`: `gpre M.f (values(ᾱ))`. Whether `δ_f` exists and returns an
-    outcome on it is not asked here: coverage (`covers`) gives the
-    implementation, and condition (3) of `genv_ok` its outcome on a typed
-    call inside `gpre`. *)
+(** The call of the chain `r = M.f [[κ̄]] ᾱ` respects the precondition of
+    the entry of `M.f`: `fe_pre ⌊values(ᾱ)⌋`. Whether `M.f` has an entry
+    and its adapter an outcome on the call is not asked here: coverage
+    (`covers`) gives the entry, and condition (3) of `genv_ok` the outcome
+    of a typed call inside `fe_pre`; a foreign with no entry has no
+    precondition to respect. *)
 let foreign_pre_ok (gi: genv) (r: exp) : prop =
   match decompose_global_app r with
-  | Some (q, _, args) -> gi.gpre q (value_args args)
+  | Some (q, _, args) ->
+    (match gi.gforeign q with
+     | Some fe -> fe.fe_pre (L.map erase (value_args args))
+     | None -> True)
   | None -> False
 
 (** `e` respects the preconditions as far as its next step: every
     saturated chain of values of a foreign in an evaluation position of `e`
-    respects the ABI precondition of its foreign (spec 06 §Conformance of
-    the global environment, "e respects preconditions under G", read for
-    the step from `e`; the reducts of `e` carry it themselves).
+    respects the erased precondition of its foreign's entry, on its erased
+    value arguments (spec 06 §An ABI precondition is where condition (3)
+    stops asking, "e respects preconditions under G", read for the step
+    from `e`; the reducts of `e` carry it themselves).
 
-    This is the program's obligation, and the only one on the term; it is
+    This is the program's obligation, the only one of the three
+    obligations that the term carries; it is
     discharged by the program, not by `G` (spec 06 §An ABI precondition is
     where condition (3) stops asking). The implementer's obligation is
-    `genv_ok`, and a call on which `δ_f` returns `None` is a point where
-    the relation is partial, which neither obligation rules out outside
-    `gpre`. *)
+    `genv_ok`, and a call on which the adapter returns `None` is a point
+    where the relation is partial, which neither obligation rules out
+    outside `fe_pre`. *)
 let pre_ok (sg: sig) (gi: genv) (e: exp) : prop =
   forall (fs: list frame) (r: exp). {:pattern plug fs r}
     (frames_ok sg fs /\ e == plug fs r /\ V.foreign_redex sg r) ==> foreign_pre_ok gi r
@@ -455,22 +473,24 @@ val value_no_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#c: config) (h: step sg gi ra st e ra' st' c)
   : Lemma (requires V.is_value sg e) (ensures False)
 
-(** The redex `r` is a saturated chain of values of a foreign `M.f` whose
-    values `v̄` satisfy `gpre M.f`, and `δ_f(v̄)` is the ABI fault `a`. *)
+(** The redex `r` is a saturated chain of values of a foreign `M.f` with an
+    entry `fe`, whose erased values `⌊v̄⌋` satisfy `fe_pre`, and the
+    adapter gives the ABI fault `a` at the instance of `r` and `v̄`. *)
 let foreign_faults (sg: sig) (gi: genv) (r: exp) (a: abi_fault) : prop =
   V.foreign_redex sg r /\
   (match decompose_global_app r with
    | Some (q, _, args) ->
-     gi.gpre q (value_args args) /\
-     (match gi.gimpl q with
-      | Some f -> f (value_args args) == Some (FOFault a)
+     (match gi.gforeign q with
+      | Some fe ->
+        fe.fe_pre (L.map erase (value_args args)) /\
+        fe.fe_adapt (chain_instance r) (value_args args) == Some (FOFault a)
       | None -> False)
    | None -> False)
 
 (** A step of the stage-5 fragment to a fault produces an ABI fault, never
     `φ_init`, and leaves `R` and `N` as they are: it is the rule for a
     saturated foreign chain at an evaluation position of `e`, whose
-    implementation returns that fault, propagated out of the context. *)
+    adapter returns that fault, propagated out of the context. *)
 val step_fault_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#phi: fault) (h: step sg gi ra st e ra' st' (CFault phi))
   : Lemma (requires stage5_frag e)

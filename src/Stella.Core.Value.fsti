@@ -258,8 +258,9 @@ val chain_values_view (sg: sig) (e: exp)
             | None -> false))
 
 (** `M.f [[κ̄]] ᾱ`, a saturated chain of the foreign `M.f` whose every value
-    argument is a value: the redex of `M.f [[κ̄]] ᾱ → δ_f(values(ᾱ))` (spec 06
-    §Chains of a constructor or a foreign). *)
+    argument is a value: the redex of `M.f [[κ̄]] ᾱ → δᵀ_f(instance, values(ᾱ))`, which a
+    foreign's typed adapter reduces (spec 06 §Chains of a constructor or a
+    foreign). *)
 let foreign_redex (sg: sig) (e: exp) : bool =
   match decompose_global_app e with
   | Some (q, ks, args) ->
