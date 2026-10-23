@@ -9,6 +9,11 @@
  *
  *     Γ_R; Γ_N; Δ ⊢ e : τ ! ρ   and   e → e'   give   Γ_R; Γ_N; Δ ⊢ e' : τ ! ρ
  *
+ * The term is one of the stage-5 fragment (`stage5_frag`), whose steps
+ * are those of the pure rules: it holds no `handle`, so no rule of
+ * operations and handlers applies anywhere in it
+ * (`Stella.Core.Semantics.Step.stage5_no_eff`).
+ *
  * The hypotheses are the part of the premises of spec 06 §Properties
  * that does not concern the store: a well-formed `Σ` (`sig_ok`),
  * well-formed run-time contexts (`rctx_ok`, `lctx_ok`), and a global
@@ -51,22 +56,24 @@ open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Step
 
 (** A step to a term keeps the type, the row and the `Δ` of a derivation
-    of a closed run-time term. *)
+    of a closed run-time term of the stage-5 fragment. *)
 val preservation (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (#d: jctx) (#t #r: typ)
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Ghost (typing sg ln (closed_ctx rs) d e' t r)
-          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage5_frag e)
           (ensures fun _ -> True)
 
-(** At the root of a program: a closed term typed at `τ`, under no join
-    point and at the row `()`, steps to a term of the same type. `Γ_N = ln` and
-    `Γ_R = rs` occur in the hypotheses alone, so they are explicit. *)
+(** At the root of a program: a closed term of the stage-5 fragment typed
+    at `τ`, under no join point and at the row `()`, steps to a term of
+    the same type. `Γ_N = ln` and `Γ_R = rs` occur in the hypotheses
+    alone, so they are explicit. *)
 val preservation_typed (#sg: sig) (#gi: genv) (ln: lctx) (rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (t: typ) (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    typed sg ln (closed_ctx rs) e t)
+                    stage5_frag e /\ typed sg ln (closed_ctx rs) e t)
           (ensures typed sg ln (closed_ctx rs) e' t)

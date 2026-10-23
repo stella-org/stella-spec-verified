@@ -1,10 +1,13 @@
 (**
  * The reduction relation (spec 06 §Reduction, §Ordinary reduction,
  * §Chains of a constructor or a foreign, §Pattern matching, §Join points,
- * §Evaluation contexts).
+ * §Operations and handlers, §Where a handler finishes, §Evaluation
+ * contexts).
  *
  *     pure_head sg G e c                    G ⊢ e → c, a head rule that
  *                                           leaves the store alone
+ *     eff_head sg G e c                     G ⊢ e → c, a rule of
+ *                                           operations and handlers
  *     step sg G R N e R' N' c               G ⊢ N; e → N'; c
  *
  * A configuration (`Stella.Core.Semantics.Env.config`) is a term or a
@@ -21,9 +24,13 @@
  * the store nor `R`: the rules of spec 06 §Ordinary reduction other than
  * those of `letrec`, `force` and `fill`, the rule for a saturated foreign's
  * chain, the rules of spec 06 §Pattern matching and of spec 06 §Join
- * points. The rules of operations and handlers, of regions and cells, and
- * of recursive bindings are relations of their own, each added to `step`
- * by a constructor of its own.
+ * points. `eff_head` holds the rules of spec 06 §Operations and handlers
+ * and §Where a handler finishes. They read neither the store nor `R`
+ * either, and form a group of their own: the rules that install, remove
+ * and reinstall a handler.
+ * Each group is added to `step` by a constructor of its own (`S_Pure`,
+ * `S_Eff`). The rules of regions and cells and of recursive bindings are
+ * not among the rules of `step`.
  *
  * The spec's metavariables are premises: a `v` or `w` is a term that
  * `is_value` accepts. Substitution is de Bruijn (`Stella.Core.Subst`):
@@ -70,7 +77,15 @@
  * rules; a step at the root is the case `Ev = []`.
  *
  * `fail τ` is notation for `perform Partial.abort [τ] Prim.Unit`
- * (`Stella.Core.Syntax.fail_exp`), so it needs no rule of its own.
+ * (`Stella.Core.Syntax.fail_exp`), so it needs no rule of its own: the
+ * rules of operations and handlers reduce it.
+ *
+ * ## Fragments
+ *
+ * `stage5_frag` is the fragment whose terms only the pure head rules
+ * reduce, and `stage6_frag` the fragment whose terms the pure head rules
+ * and the rules of operations and handlers reduce. Each rules out the
+ * forms of the rules beyond it, at every node of the term.
  *)
 module Stella.Core.Semantics.Step
 open Stella.Core.Syntax
@@ -81,6 +96,7 @@ open Stella.Core.Erase
 open Stella.Core.Typing.Aux
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
+open Stella.Core.Semantics.Ctx.Ren
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 
@@ -342,16 +358,160 @@ noeq type pure_head (sg: sig) (gi: genv) : exp -> config -> Type =
 val value_no_pure_head (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: pure_head sg gi e c)
   : Lemma (requires V.is_value sg e) (ensures False)
 
+(** * The rules of operations and handlers
+
+    Spec 06 §Operations and handlers, §Where a handler finishes. A handler
+    `h = { handles ent ; … }` has the key `k = key(ent)` (`handler_key`).
+    The `perform` it answers stands in the hole of an `Ev_k` (`ev_k k fs`
+    with `frames_ok sg fs`): no `handle` of key `k` stands between, so the
+    chosen handler is the innermost one of its key, and a handler of any
+    other key is a frame of `Ev_k` like any other. The key is read from
+    `ent`, never from a clause; the clause is the first one named `op`
+    (`clause_of`), a function of the clauses rather than a choice among
+    them, so the rules are deterministic whatever clauses a handler holds.
+
+    The element is `E τ̄` or `s : E τ̄` (`EntEff lbl q ts`), and `E`'s
+    signature is read from `Σ` (`sg.effects q = Some ei`,
+    `op_of ei op = Some os`). The `perform` writes one type `σ_j` per binder
+    `b_j` of the operation and the clause binds as many
+    (`|σ̄| = |os.binders| = nb`).
+
+    ## de Bruijn reading
+
+    The clause body stands under the `nb` type binders `b̄`, the last one
+    being type index 0 (`Stella.Core.Syntax`, design §3.1), as the clause
+    is typed under `push_tvars g os.binders`. `b̄ := σ̄` is therefore
+    `sub_ty_exp (list_tsub (rev σ̄))` (`binders_tsub`), which sends type
+    index `i < nb` to `σ_{nb-1-i}` and lowers the outer indices by `nb`:
+    the instantiation `op_inst` applies to the operation's types.
+
+    The body of a `full` clause stands under `x` then `k`, so `k` is term
+    index 0 and `x` index 1 (`push_var (push_var … σ) κ`). Once its type
+    binders are instantiated, both are replaced at once by
+    `list_esub [k_v; v]`, which is `list_esub (rev [v; k_v])` for the
+    telescope `(x, k)`. The body of a `fast` clause binds `x` alone, at
+    index 0 (`subst1_tm`). The terms substituted stand outside the clause,
+    under no type binder of it, so the type binders are instantiated
+    first and the term substitution needs no type shift.
+
+    `handle Ev_k[y] with h` stands under one new term binder `y`, the
+    parameter of the continuation or the binder of the `let`, at index 0.
+    The context and the handler move under it, so their free term
+    variables are shifted by one (`resume`).
+
+    ## The continuation's annotation
+
+    Spec 06 writes the continuation `λ(y : τ') / ρ. …` with `ρ` the row the
+    `handle` stands at, which the term does not record. The written
+    continuation type `κ` of a `full` clause records both: instantiated at
+    `σ̄`, it is a function type `τ' -{ρ}-> β` (`as_function`), and the
+    annotation of the `λ` is read from it. Where it is no function type,
+    the rule does not apply. The `let` of a `fast` clause is annotated with
+    the instantiated result type `op_inst τ̄ σ̄ τ_res`.
+
+    `fail τ` is `perform Partial.abort [τ] Prim.Unit`, so these rules
+    reduce it, the form of the clause for `abort` deciding which. *)
+
+(** The first clause of `cs` for the operation `op`. *)
+let rec clause_of (op: opname) (cs: list clause) : Tot (option clause) (decreases cs) =
+  match cs with
+  | [] -> None
+  | c :: cs -> if clause_op c = op then Some c else clause_of op cs
+
+(** A clause found by `clause_of op` is one of `cs` and is named `op`. *)
+val clause_of_mem (op: opname) (cs: list clause) (c: clause)
+  : Lemma (requires clause_of op cs == Some c) (ensures clause_op c == op /\ L.memP c cs)
+
+(** `b̄ := σ̄` for the type binders `b̄` of a clause. *)
+let binders_tsub (ss: list typ) : tsub = list_tsub (L.rev ss)
+
+(** `handle Ev_k[y] with h` under the binder of `y`, index 0. *)
+let resume (fs: list frame) (h: handler) : exp =
+  EHandle (plug (ren_frames (shift 1) fs) (EVar 0)) (ren_handler (shift 1) h)
+
+(** The continuation `λ(y : τ') / ρ. handle Ev_k[y] with h`. *)
+let continuation (tp rho: typ) (fs: list frame) (h: handler) : exp =
+  ELam tp rho (resume fs h)
+
+(** `e_i[b̄ := σ̄, x := v, k := λ(y : τ') / ρ. handle Ev_k[y] with h]` for
+    the body `e_i` of a `full` clause. *)
+let full_reduct (ss: list typ) (v: exp) (tp rho: typ) (fs: list frame) (h: handler)
+  (body: exp) : exp =
+  sub_tm (list_esub [continuation tp rho fs h; v]) (sub_ty_exp (binders_tsub ss) body)
+
+(** `let y : τ' = e_i[b̄ := σ̄, x := v] in (handle Ev_k[y] with h)` for the
+    body `e_i` of a `fast` clause, `τ' = op_inst τ̄ σ̄ τ_res`. *)
+let fast_reduct (ts ss: list typ) (os: op_sig) (v: exp) (fs: list frame) (h: handler)
+  (body: exp) : exp =
+  ELet (op_inst ts ss os.res) (subst1_tm v (sub_ty_exp (binders_tsub ss) body)) (resume fs h)
+
+noeq type eff_head (sg: sig) (gi: genv) : exp -> config -> Type =
+
+  (** `handle v with h  →  e_r[x := v]` *)
+  | EH_Return :
+      #v:exp -> #h:handler ->
+      squash (V.is_value sg v) ->
+      eff_head sg gi (EHandle v h) (CTerm (subst1_tm v h.h_ret))
+
+  (** `handle Ev_k[perform k.op [σ̄] v] with h
+         →  e_i[b̄ := σ̄, x := v, k := λ(y : τ') / ρ. handle Ev_k[y] with h]`
+      for the clause `full op [b̄] (x : σ, k : κ) -> e_i`, with
+      `κ[b̄ := σ̄] = τ' -{ρ}-> β`. *)
+  | EH_Full :
+      #fs:list frame -> #k:key -> #op:opname -> #ss:list typ -> #v:exp -> #h:handler ->
+      #lbl:option string -> #q:qname -> #ts:list typ -> #ei:effect_info -> #os:op_sig ->
+      #nb:nat -> #s:typ -> #kt:typ -> #body:exp -> #tp:typ -> #rho:typ -> #bt:typ ->
+      squash (frames_ok sg fs /\ ev_k k fs /\ V.is_value sg v) ->
+      squash (h.h_ent == EntEff lbl q ts /\ handler_key h == k) ->
+      squash (sg.effects q == Some ei /\ op_of ei op == Some os) ->
+      squash (clause_of op h.h_clauses == Some (CFull op nb s kt body) /\
+              L.length ss == nb /\ nb == L.length os.binders) ->
+      squash (as_function sg (sub_ty (binders_tsub ss) kt) == Some (tp, rho, bt)) ->
+      eff_head sg gi (EHandle (plug fs (EPerform k op ss v)) h)
+        (CTerm (full_reduct ss v tp rho fs h body))
+
+  (** `handle Ev_k[perform k.op [σ̄] v] with h
+         →  let y : τ' = e_i[b̄ := σ̄, x := v] in (handle Ev_k[y] with h)`
+      for the clause `fast op [b̄] (x : σ) -> e_i`. *)
+  | EH_Fast :
+      #fs:list frame -> #k:key -> #op:opname -> #ss:list typ -> #v:exp -> #h:handler ->
+      #lbl:option string -> #q:qname -> #ts:list typ -> #ei:effect_info -> #os:op_sig ->
+      #nb:nat -> #s:typ -> #body:exp ->
+      squash (frames_ok sg fs /\ ev_k k fs /\ V.is_value sg v) ->
+      squash (h.h_ent == EntEff lbl q ts /\ handler_key h == k) ->
+      squash (sg.effects q == Some ei /\ op_of ei op == Some os) ->
+      squash (clause_of op h.h_clauses == Some (CFast op nb s body) /\
+              L.length ss == nb /\ nb == L.length os.binders) ->
+      eff_head sg gi (EHandle (plug fs (EPerform k op ss v)) h)
+        (CTerm (fast_reduct ts ss os v fs h body))
+
+(** An effect rule rewrites a `handle` and steps to a term, never to a
+    fault. It reads no store and no region name: `S_Eff` concludes with
+    the same `R` and `N` on both sides. *)
+val eff_step_shape (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg gi e c)
+  : Lemma (EHandle? e /\ CTerm? c)
+
+(** A value is no redex of an effect rule. *)
+val value_no_eff_head (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg gi e c)
+  : Lemma (requires V.is_value sg e) (ensures False)
+
 (** * Steps *)
 
 (** `G ⊢ N; e → N'; c`, with `R` and `R'` the region names allocated
     before and after. *)
 noeq type step (sg: sig) (gi: genv)
   : list atom -> store -> exp -> list atom -> store -> config -> Type =
-  (** A head rule that leaves `R` and `N` as they are. *)
+  (** A pure head rule, which leaves `R` and `N` as they are. *)
   | S_Pure :
       #ra:list atom -> #st:store -> #e:exp -> #c:config ->
       pure_head sg gi e c ->
+      step sg gi ra st e ra st c
+
+  (** A rule of operations and handlers, which leaves `R` and `N` as they
+      are. *)
+  | S_Eff :
+      #ra:list atom -> #st:store -> #e:exp -> #c:config ->
+      eff_head sg gi e c ->
       step sg gi ra st e ra st c
 
   (** `G ⊢ N; e → N'; e'` gives `G ⊢ N; f[e] → N'; f[e']`. *)
@@ -384,7 +544,7 @@ val step_plug_fault (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: ex
   : Pure (step sg gi ra st (plug fs e) ra' st' (CFault phi))
          (requires frames_ok sg fs) (ensures fun _ -> True)
 
-(** * The fragment of stage 5 *)
+(** * The fragments of stages 5 and 6 *)
 
 (** A node is none of `perform`, `handle`, `region`, an open region frame,
     `readCell`, `writeCell`, `letrec`, `force` and `fill`, whose rules are
@@ -398,6 +558,27 @@ let stage5_node (e: exp) : bool =
 (** `e` has no such node anywhere, decision trees, `λ` bodies and every
     other subterm included. *)
 let stage5_frag (e: exp) : bool = exp_all stage5_node e
+
+(** A node is none of `region`, an open region frame, `readCell`,
+    `writeCell`, `letrec`, `force` and `fill`, whose rules are neither
+    pure head rules nor rules of operations and handlers. A `perform`, a
+    `fail` leaf among them, and a `handle` are nodes of the fragment. *)
+let stage6_node (e: exp) : bool =
+  match e with
+  | ERegion _ _ _ | ERegionOpen _ _ _ | EReadCell _ _ | EWriteCell _ _ _
+  | ELetRec _ _ | EForce _ | EFill _ _ -> false
+  | _ -> true
+
+(** `e` has no such node anywhere. *)
+let stage6_frag (e: exp) : bool = exp_all stage6_node e
+
+(** The stage-5 fragment is part of the stage-6 fragment. *)
+val stage5_frag_stage6 (e: exp) : Lemma (requires stage5_frag e) (ensures stage6_frag e)
+
+(** A term of the stage-5 fragment has no `handle` at its root, so no rule
+    of operations and handlers applies to it. *)
+val stage5_no_eff (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg gi e c)
+  : Lemma (requires stage5_frag e) (ensures False)
 
 (** * Preconditions *)
 
@@ -437,6 +618,9 @@ let pre_ok (sg: sig) (gi: genv) (e: exp) : prop =
 
 val stage5_frag_plug1 (f: frame) (e: exp)
   : Lemma (requires stage5_frag (plug1 f e)) (ensures stage5_frag e)
+
+val stage6_frag_plug1 (f: frame) (e: exp)
+  : Lemma (requires stage6_frag (plug1 f e)) (ensures stage6_frag e)
 
 val covers_plug1 (sg: sig) (gi: genv) (f: frame) (e: exp)
   : Lemma (requires covers sg gi (plug1 f e)) (ensures covers sg gi e)
@@ -487,20 +671,22 @@ let foreign_faults (sg: sig) (gi: genv) (r: exp) (a: abi_fault) : prop =
       | None -> False)
    | None -> False)
 
-(** A step of the stage-5 fragment to a fault produces an ABI fault, never
+(** A step of the stage-6 fragment to a fault produces an ABI fault, never
     `φ_init`, and leaves `R` and `N` as they are: it is the rule for a
     saturated foreign chain at an evaluation position of `e`, whose
-    adapter returns that fault, propagated out of the context. *)
+    adapter returns that fault, propagated out of the context. No rule of
+    operations and handlers produces a fault (`eff_step_shape`). *)
 val step_fault_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#phi: fault) (h: step sg gi ra st e ra' st' (CFault phi))
-  : Lemma (requires stage5_frag e)
+  : Lemma (requires stage6_frag e)
           (ensures FAbi? phi /\ ra' == ra /\ st' == st /\
                    (exists (fs: list frame) (r: exp) (a: abi_fault).
                       phi == FAbi a /\ frames_ok sg fs /\ e == plug fs r /\
                       foreign_faults sg gi r a))
 
-(** A step of the stage-5 fragment to a term leaves `R` and `N` as they
-    are: it is a pure head rule at an evaluation position of `e`. *)
+(** A step of the stage-6 fragment to a term leaves `R` and `N` as they
+    are: it is a pure head rule or a rule of operations and handlers at an
+    evaluation position of `e`. *)
 val step_term_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
-  : Lemma (requires stage5_frag e) (ensures ra' == ra /\ st' == st)
+  : Lemma (requires stage6_frag e) (ensures ra' == ra /\ st' == st)

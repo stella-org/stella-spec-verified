@@ -24,7 +24,8 @@
  *     name (`Stella.Core.Semantics.Covers`).
  *
  * The hypotheses are those of `Stella.Core.Safety.Preservation.preservation`,
- * plus the coverage of the term.
+ * the term being of the stage-5 fragment (`stage5_frag`), plus the
+ * coverage of the term.
  *)
 module Stella.Core.Safety.Covers
 open Stella.Core.Syntax
@@ -37,13 +38,13 @@ open Stella.Core.Typing.Runtime
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Step
 
-(** A step to a term keeps the coverage of a closed run-time term typed
-    under conforming contexts. *)
+(** A step to a term keeps the coverage of a closed run-time term of the
+    stage-5 fragment typed under conforming contexts. *)
 val preservation_covers (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (#d: jctx) (#t #r: typ)
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    covers sg gi e)
+                    stage5_frag e /\ covers sg gi e)
           (ensures covers sg gi e')

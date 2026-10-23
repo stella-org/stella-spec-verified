@@ -35,8 +35,7 @@ Proven so far:
 - A top-level value, instantiated at any kinds, is typed in every context that keeps the layouts of its regions.
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 - The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
-
-Under review: for the pure rules, a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
+- Type safety of the pure rules: a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
 
 Planned:
 

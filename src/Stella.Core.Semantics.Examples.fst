@@ -693,6 +693,7 @@ let length_lit_no_step #ra #st #ra' #st' #c h =
   assert_norm (~(length_entry.fe_pre (L.map erase [lit_int 0l])));
   match h with
   | S_Pure ph -> ()
+  | S_Eff eh -> eff_step_shape eh
   | S_Ctx #_ #_ #_ #_ #x #_ #_ #_ f _ h' ->
     plug1_app_inv f x length_head (lit_int 0l); value_no_step h'
   | S_CtxFault #_ #_ #_ #_ #x #_ #_ #_ f _ h' ->

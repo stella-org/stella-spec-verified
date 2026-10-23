@@ -5,7 +5,9 @@
    its reduct, and the frame is filled back (`covers_plug1_replace`). The
    foreign rule reads the derivation of its redex, so the hole's
    derivation is taken from `plug1_typing`; a value has no step, so the
-   hole is no value, which `plug1_typing` asks.
+   hole is no value, which `plug1_typing` asks. The hole of a term of the
+   stage-5 fragment is one (`stage5_frag_plug1`), and no effect rule
+   applies to such a term (`stage5_no_eff`).
 
    A head rule is handled by one helper per family of rules (`cov_*`), on
    the syntax alone except for the two rules that read `G`. The foreign
@@ -169,13 +171,15 @@ let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    covers sg gi e)
+                    stage5_frag e /\ covers sg gi e)
           (ensures covers sg gi e')
           (decreases s) =
   match s with
   | S_Pure ph -> cov_head #sg #gi #ln #rs #d #e #e' #t #r h ph
+  | S_Eff eh -> stage5_no_eff eh
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
+    stage5_frag_plug1 f e1;
     if V.is_value sg e1 then value_no_step s1
     else begin
       let pi = plug1_typing_h #sg #ln #(closed_ctx rs) #d #f #e1 #t #r (retm h (plug1 f e1)) in

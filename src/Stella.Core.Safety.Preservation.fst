@@ -4,7 +4,9 @@
    (`plug1_typing`), the induction types the hole's reduct at the hole's
    own `Δ` and row, and the frame is filled back, the cursor of a chain
    being kept by the step (`step_plug1_cursor_kept`). A value has no step,
-   so the hole is no value, which `plug1_typing` asks.
+   so the hole is no value, which `plug1_typing` asks. The hole of a term
+   of the stage-5 fragment is one (`stage5_frag_plug1`), and no effect
+   rule applies to such a term (`stage5_no_eff`).
 
    A head rule is handled by one helper per rule (`pres_*`). Each strips
    the conversions at the bottom of the redex's derivation (`strip_conv`),
@@ -954,14 +956,17 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Ghost (typing sg ln (closed_ctx rs) d e' t r)
-          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage5_frag e)
           (ensures fun _ -> True)
           (decreases s) =
   match s with
   | S_Pure #_ #_ #_ #_ #e0 #c ph ->
     pres_head #sg #gi #ln #rs #d #e #e' #t #r h ph
+  | S_Eff eh -> stage5_no_eff eh; false_elim ()
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
+    stage5_frag_plug1 f e1;
     if V.is_value sg e1 then begin
       value_no_step s1;
       false_elim ()

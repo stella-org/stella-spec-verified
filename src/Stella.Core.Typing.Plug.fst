@@ -5,7 +5,8 @@
    read it. A saturated foreign prefix has no further step, so the prefix
    of a chain with a cursor is no foreign redex (`prefix_not_foreign_redex`),
    and `step_chain_cursor` recurses into it. No pure head rule but the
-   foreign one rewrites a chain with a cursor (`pure_head_no_cursor`).
+   foreign one rewrites a chain with a cursor (`pure_head_no_cursor`), and
+   an effect rule rewrites a `handle`, which has none (`eff_step_shape`).
 
    One frame. `plug1_typing` strips the conversions (`strip_conv`), splits
    the conversion-free derivation with one helper per frame (`pi_*`), and
@@ -96,6 +97,7 @@ let rec step_chain_cursor #sg #gi #ra #st #e #ra' #st' #e' s
           (decreases s) =
   match s with
   | S_Pure ph -> pure_head_no_cursor ph
+  | S_Eff eh -> eff_step_shape eh
   | S_Ctx #_ #_ #_ #_ #e0 #_ #_ #e0' f _ s0 ->
     (match f with
      | FAppArg fn -> chain_cursor_replace_val sg fn e0 e0'
