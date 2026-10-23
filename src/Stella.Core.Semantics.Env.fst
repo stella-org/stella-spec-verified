@@ -210,16 +210,6 @@ let layouts_ext_regions (g1 g2 g1' g2': ctx)
   : Lemma (requires layouts_ext g1 g2 /\ g1'.regions == g1.regions /\ g2'.regions == g2.regions)
           (ensures layouts_ext g1' g2') = ()
 
-let layouts_ext_trans (g1 g2 g3: ctx)
-  : Lemma (requires layouts_ext g1 g2 /\ layouts_ext g2 g3) (ensures layouts_ext g1 g3) =
-  introduce forall (a: atom).
-      (match L.assoc a g1.regions with
-       | Some l -> L.assoc a g3.regions == Some l
-       | None -> True)
-  with (match L.assoc a g1.regions with
-        | Some l -> assert (L.assoc a g2.regions == Some l)
-        | None -> ())
-
 let lctx_incl_trans (ln1 ln2 ln3: lctx)
   : Lemma (requires lctx_incl ln1 ln2 /\ lctx_incl ln2 ln3) (ensures lctx_incl ln1 ln3) = ()
 

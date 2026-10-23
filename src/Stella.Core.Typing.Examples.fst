@@ -16,12 +16,6 @@ open Stella.Core.Typing.Aux
 open Stella.Core.Typing
 module L = FStar.List.Tot
 
-(* A derivation read at a type and a row equal to its own. *)
-let retype (#g: ctx) (#d: jctx) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
-           (h: typing ex_sig [] g d e t1 r1)
-  : Pure (typing ex_sig [] g d e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
-  h
-
 (* `M.x`, a global with an empty kind scheme. *)
 let global0 (g: ctx) (d: jctx) (q: qname) (t: typ) (r: typ)
   : Pure (typing ex_sig [] g d (EGlobal q []) t r)

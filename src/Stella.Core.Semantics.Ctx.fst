@@ -42,3 +42,13 @@ let plug1_not_value sg f e =
   | FTyApp t -> if V.is_value sg (ETyApp e t) then chain_prefix_value sg e (STy t)
   | FCApp -> if V.is_value sg (ECApp e) then chain_prefix_value sg e SConstr
   | _ -> ()
+
+(* * Sub-grammars *)
+
+let rec tl_frames_snoc (fs: list frame) (f: frame)
+  : Lemma (requires tl_frames fs /\ FLetJoin? f)
+          (ensures tl_frames (L.append fs [f]) /\ L.length (L.append fs [f]) == L.length fs + 1)
+          (decreases fs) =
+  match fs with
+  | [] -> ()
+  | _ :: fs' -> tl_frames_snoc fs' f

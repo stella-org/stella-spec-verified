@@ -172,6 +172,12 @@ let is_letjoin_frame (f: frame) : bool = FLetJoin? f
 (** `Tl`: only `letjoin` continuation frames. *)
 let tl_frames (fs: list frame) : bool = L.for_all is_letjoin_frame fs
 
+(** A tail context extended outside by a `letjoin` continuation is one,
+    one frame longer. *)
+val tl_frames_snoc (fs: list frame) (f: frame)
+  : Lemma (requires tl_frames fs /\ FLetJoin? f)
+          (ensures tl_frames (L.append fs [f]) /\ L.length (L.append fs [f]) == L.length fs + 1)
+
 (** The key of the element a handler removes. *)
 let handler_key (h: handler) : key = ent_key h.h_ent
 

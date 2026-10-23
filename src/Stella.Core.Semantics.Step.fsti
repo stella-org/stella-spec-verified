@@ -498,3 +498,9 @@ val step_fault_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: e
                    (exists (fs: list frame) (r: exp) (a: abi_fault).
                       phi == FAbi a /\ frames_ok sg fs /\ e == plug fs r /\
                       foreign_faults sg gi r a))
+
+(** A step of the stage-5 fragment to a term leaves `R` and `N` as they
+    are: it is a pure head rule at an evaluation position of `e`. *)
+val step_term_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
+  : Lemma (requires stage5_frag e) (ensures ra' == ra /\ st' == st)

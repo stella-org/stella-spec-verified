@@ -44,6 +44,12 @@ let layouts_ext (g g': ctx) : prop =
     | Some l -> L.assoc a g'.regions == Some l
     | None -> True
 
+(** `layouts_ext` is a preorder. *)
+val layouts_ext_refl (g: ctx) : Lemma (layouts_ext g g)
+
+val layouts_ext_trans (g1 g2 g3: ctx)
+  : Lemma (requires layouts_ext g1 g2 /\ layouts_ext g2 g3) (ensures layouts_ext g1 g3)
+
 let tm_ren_ok (xi: ren) (g g': ctx) : prop =
   ctx_ext g g' /\ layouts_ext g g' /\
   (forall (i: nat). {:pattern L.nth g.vars i}

@@ -28,11 +28,6 @@ open Stella.Core.Typing.Examples
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 
-let retype (#g: ctx) (#d: jctx) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
-           (h: typing ex_sig [] g d e t1 r1)
-  : Pure (typing ex_sig [] g d e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
-  h
-
 (* * Building chains *)
 
 let chain_head (g: ctx) (d: jctx) (r: typ) (q: qname)

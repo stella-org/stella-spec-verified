@@ -54,10 +54,6 @@ module V = Stella.Core.Value
 
 (* * Cursors *)
 
-let decompose_prefix (e0: exp) (a: spine_arg)
-  : Lemma (requires Some? (decompose_global_app (apply_arg e0 a)))
-          (ensures Some? (decompose_global_app e0)) = ()
-
 (* Only the frames of a chain build a chain. *)
 let plug1_chain_frame (f: frame) (e: exp)
   : Lemma (requires Some? (decompose_global_app (plug1 f e)))

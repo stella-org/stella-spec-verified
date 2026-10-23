@@ -146,3 +146,9 @@ let ext_ty_cancel_entails hyps k t t' r0 r1 =
   entails_lacks_known hyps k r0;
   entails_lacks_known hyps k r1;
   ext_ty_cancel k t t' r0 r1
+
+let ext_ty_cancel_swap hyps k k' t0 t1 r0 r1 rd =
+  ty_eq_ext_cong (EntTy k' t1) (EntTy k' t1) r1 (TRowExt (EntTy k t0) rd);
+  ext_comm (EntTy k' t1) (EntTy k t0) rd;
+  entails_lacks_ext hyps k (EntTy k' t1) rd;
+  ext_ty_cancel_entails hyps k t0 t0 r0 (TRowExt (EntTy k' t1) rd)

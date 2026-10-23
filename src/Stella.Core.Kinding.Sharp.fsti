@@ -83,3 +83,20 @@ val check_split_ty (sg: sig) (g: ctx) (k: key) (t r: typ)
           (ensures ty_eq r (TRowExt (EntTy k t) (row_drop k r)) /\
                    check sg g (row_drop k r) (KRow EType) /\
                    entails (hyps g) (CLacks k (row_drop k r)))
+
+(** The split at `k` of the rest of `( k' : τ1 | ρ1 ) ≡ ( k : τ0 | ρ0 )`,
+    `k ≠ k'`, both sides kinded: `k : τ0` is an entry of `ρ1`
+    (`Stella.Core.Rows.Split.ext_other_entry`), so
+    `ρ1 ≡ ( k : τ0 | ρd )` with `ρd = row_drop k ρ1` kinded and lacking
+    `k` and `k'`. *)
+val check_split_ty_other (sg: sig) (g: ctx) (k k': key) (t0 t1 r0 r1: typ)
+  : Lemma (requires not (inconsistent (hyps g)) /\ k <> k' /\
+                    ty_eq (TRowExt (EntTy k t0) r0) (TRowExt (EntTy k' t1) r1) /\
+                    check sg g (TRowExt (EntTy k t0) r0) (KRow EType) /\
+                    check sg g r1 (KRow EType) /\ entails (hyps g) (CLacks k' r1))
+          (ensures (let rd = row_drop k r1 in
+                    ty_eq r1 (TRowExt (EntTy k t0) rd) /\
+                    check sg g (TRowExt (EntTy k t0) rd) (KRow EType) /\
+                    check sg g rd (KRow EType) /\
+                    entails (hyps g) (CLacks k rd) /\ entails (hyps g) (CLacks k' rd) /\
+                    entails (hyps g) (CLacks k r0) /\ check sg g t0 KType))

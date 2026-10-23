@@ -148,6 +148,12 @@ val chain_cursor_apply_arg (sg: sig) (e: exp) (a: spine_arg)
                     | Some (t', th') -> cursor_step sg t' th' a
                     | None -> None))
 
+(** The function position of a chain is a chain: when `e α` is one, so is
+    `e`. *)
+val decompose_prefix (e: exp) (a: spine_arg)
+  : Lemma (requires Some? (decompose_global_app (apply_arg e a)))
+          (ensures Some? (decompose_global_app e))
+
 (** A function type stays one under a substitution, with its parts
     substituted. The converse fails: a substitution can turn a variable
     into a function type. *)

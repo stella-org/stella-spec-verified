@@ -180,3 +180,12 @@ let check_split_eff sg g k q ts r =
   check_split sg g (EntEff (eff_label k) q ts) r EEffect
 
 let check_split_ty sg g k t r = check_split sg g (EntTy k t) r EType
+
+let check_split_ty_other sg g k k' t0 t1 r0 r1 =
+  let rd = row_drop k r1 in
+  check_ext_ty sg g k t0 r0;
+  ext_other_entry k k' t0 t1 r0 r1;
+  check_split_ty sg g k t0 r1;
+  check_ext_ty sg g k t0 rd;
+  sub_row_drop k r1;
+  entails_lacks_sub (hyps g) k' r1 rd

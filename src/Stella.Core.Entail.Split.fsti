@@ -86,3 +86,13 @@ val ext_ty_cancel_entails (hyps: list constr) (k: key) (t t' r0 r1: typ)
                     ty_eq (TRowExt (EntTy k t) r0) (TRowExt (EntTy k t') r1) /\
                     entails hyps (CLacks k r0) /\ entails hyps (CLacks k r1))
           (ensures ty_eq t t' /\ ty_eq r0 r1)
+
+(** Cancellation across a swap: `( k : τ0 | ρ0 ) ≡ ( k' : τ1 | ρ1 )` with
+    `ρ1 ≡ ( k : τ0 | ρd )`, `k ≠ k'` and `k` lacked by `ρ0` and `ρd`, gives
+    `ρ0 ≡ ( k' : τ1 | ρd )`. *)
+val ext_ty_cancel_swap (hyps: list constr) (k k': key) (t0 t1 r0 r1 rd: typ)
+  : Lemma (requires not (inconsistent hyps) /\ k <> k' /\
+                    ty_eq (TRowExt (EntTy k t0) r0) (TRowExt (EntTy k' t1) r1) /\
+                    ty_eq r1 (TRowExt (EntTy k t0) rd) /\
+                    entails hyps (CLacks k r0) /\ entails hyps (CLacks k rd))
+          (ensures ty_eq r0 (TRowExt (EntTy k' t1) rd))

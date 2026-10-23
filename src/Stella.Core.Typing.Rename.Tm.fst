@@ -100,6 +100,21 @@ let closed_ext (sg: sig) (g g': ctx) (t: typ) (k: kind)
 
 (* The context morphism. *)
 
+let layouts_ext_refl (g: ctx) =
+  introduce forall (a: atom). (match L.assoc a g.regions with
+                               | Some l -> L.assoc a g.regions == Some l
+                               | None -> True)
+  with ()
+
+let layouts_ext_trans (g1 g2 g3: ctx) =
+  introduce forall (a: atom).
+      (match L.assoc a g1.regions with
+       | Some l -> L.assoc a g3.regions == Some l
+       | None -> True)
+  with (match L.assoc a g1.regions with
+        | Some l -> assert (L.assoc a g2.regions == Some l)
+        | None -> ())
+
 let tm_ren_ok_ext xi xi' g g' = ()
 
 let tm_ren_ok_up xi g g' t =

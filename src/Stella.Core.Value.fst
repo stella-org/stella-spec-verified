@@ -686,6 +686,27 @@ let foreign_redex_not_value (sg: sig) (e: exp)
   : Lemma (requires foreign_redex sg e) (ensures not (is_value sg e)) =
   ()
 
+(* * Chains of values *)
+
+let chain_values_of_value (sg: sig) (e: exp)
+  : Lemma (requires is_value sg e /\ Some? (decompose_global_app e)) (ensures chain_values sg e) =
+  match e with
+  | EGlobal _ _ | EApp _ _ | ETyApp _ _ | ECApp _ -> ()
+
+let chain_value_or_redex (sg: sig) (e: exp) =
+  match e with
+  | EGlobal _ _ | EApp _ _ | ETyApp _ _ | ECApp _ -> ()
+
+let chain_extend_value_or_redex (sg: sig) (e: exp) (a: spine_arg) =
+  chain_cursor_apply_arg sg e a;
+  chain_values_of_value sg e;
+  chain_value_or_redex sg (apply_arg e a)
+
+let chain_prefix_value_or_redex (sg: sig) (e: exp) (a: spine_arg) =
+  decompose_prefix e a;
+  chain_values_of_value sg e;
+  chain_value_or_redex sg (apply_arg e a)
+
 let rec value_jp_scoped (sg: sig) (n: nat) (v: exp)
   : Lemma (requires is_value sg v /\ jp_scoped n v) (ensures jp_scoped 0 v)
           (decreases %[v; 1]) =

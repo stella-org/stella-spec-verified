@@ -39,6 +39,8 @@ let chain_cursor_apply_arg (sg: sig) (e: exp) (a: spine_arg) =
   let Some (q, ks, args) = decompose_global_app e in
   spine_cursor_snoc sg q ks args a
 
+let decompose_prefix (e: exp) (a: spine_arg) = ()
+
 (* One unfolding of `sub_ty` per application node. *)
 let as_function_sub (sg: sig) (sigma: tsub) (t t1 r t2: typ) =
   let TApp (TApp (TApp (TCon q _) _) _) _ = t in

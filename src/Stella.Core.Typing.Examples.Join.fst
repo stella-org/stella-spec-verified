@@ -27,11 +27,6 @@ module V = Stella.Core.Value
 module SC = Stella.Core.Scope
 module Inst = Stella.Core.Typing.Subst.Tm.Inst
 
-let retype (#g: ctx) (#d: jctx) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
-           (h: typing ex_sig [] g d e t1 r1)
-  : Pure (typing ex_sig [] g d e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
-  h
-
 let lit_typing (g: ctx) (d: jctx) (c: lit) (t r: typ)
   : Pure (typing ex_sig [] g d (ELit c) t r)
          (requires lit_type c == t /\ check ex_sig g r (KRow EEffect))

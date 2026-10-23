@@ -97,6 +97,14 @@ let ex_sig : sig = {
   values = (fun _ -> None);
 }
 
+(** A derivation over `ex_sig` read at a type and a row equal to its own,
+    as a rule computes them, so that the derivations of the examples are
+    stated at the types written out. *)
+let retype (#g: ctx) (#d: jctx) (#e: exp) (#t1 #r1: typ) (t2 r2: typ)
+           (h: typing ex_sig [] g d e t1 r1)
+  : Pure (typing ex_sig [] g d e t2 r2) (requires t1 == t2 /\ r1 == r2) (ensures fun _ -> True) =
+  h
+
 (** * The identity *)
 
 (** `λ (x : Int) / (). x` *)

@@ -161,6 +161,12 @@ val ext_ty_cancel (k: key) (t t' r0 r1: typ)
                     not (L.mem k (known_keys r0)) /\ not (L.mem k (known_keys r1)))
           (ensures ty_eq t t' /\ ty_eq r0 r1)
 
+(** At two different keys nothing cancels: the entry `k : τ0` of
+    `( k : τ0 | ρ0 ) ≡ ( k' : τ1 | ρ1 )`, `k ≠ k'`, is one of `ρ1`. *)
+val ext_other_entry (k k': key) (t0 t1 r0 r1: typ)
+  : Lemma (requires ty_eq (TRowExt (EntTy k t0) r0) (TRowExt (EntTy k' t1) r1) /\ k <> k')
+          (ensures L.mem (k, PTy (canon t0)) (row_entries (canon r1)))
+
 (** * Extension under union *)
 
 (** `( ent | ρ ) ⊎ ρ3 ≡ ( ent | ρ ⊎ ρ3 )`, from `ext_as_union` and

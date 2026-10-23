@@ -273,6 +273,38 @@ let foreign_redex (sg: sig) (e: exp) : bool =
 val foreign_redex_not_value (sg: sig) (e: exp)
   : Lemma (requires foreign_redex sg e) (ensures not (is_value sg e))
 
+(** * Chains of values
+
+    A chain whose cursor is defined and whose value arguments are values
+    is a value or a foreign redex: its head is a constructor, or a foreign
+    whose chain is unsaturated or saturated. Applying one more argument to
+    a value chain gives such a chain when the cursor accepts the
+    argument. *)
+
+(** A chain of values with a cursor is a value or a saturated foreign
+    chain. *)
+val chain_value_or_redex (sg: sig) (e: exp)
+  : Lemma (requires Some? (chain_cursor sg e) /\ chain_values sg e)
+          (ensures is_value sg e \/ foreign_redex sg e)
+
+(** A value chain applied to an argument, a value if it is a term, that
+    the cursor of the chain accepts. *)
+val chain_extend_value_or_redex (sg: sig) (e: exp) (a: spine_arg)
+  : Lemma (requires value_head sg e /\ is_value sg e /\
+                    (match a with SVal v -> is_value sg v | _ -> True) /\
+                    (match chain_cursor sg e with
+                     | Some (s, th) -> Some? (cursor_step sg s th a)
+                     | None -> False))
+          (ensures is_value sg (apply_arg e a) \/ foreign_redex sg (apply_arg e a))
+
+(** A value applied to an argument, a value if it is a term, that makes a
+    chain with a cursor: the value is a chain itself
+    (`Stella.Core.Spine.decompose_prefix`). *)
+val chain_prefix_value_or_redex (sg: sig) (e: exp) (a: spine_arg)
+  : Lemma (requires Some? (chain_cursor sg (apply_arg e a)) /\ is_value sg e /\
+                    (match a with SVal v -> is_value sg v | _ -> True))
+          (ensures is_value sg (apply_arg e a) \/ foreign_redex sg (apply_arg e a))
+
 (** * The join-point value lemma *)
 
 (** A scoped value is scoped under every join context: its join indices

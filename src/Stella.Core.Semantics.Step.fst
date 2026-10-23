@@ -164,3 +164,13 @@ let rec fault_site (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp
     )
 
 let step_fault_shape #sg #gi #ra #st #e #ra' #st' #phi h = fault_site h
+
+(* A pure head rule keeps `R` and `N`, and a frame passes them on. *)
+let rec term_site (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
+  : Lemma (ensures ra' == ra /\ st' == st) (decreases h) =
+  match h with
+  | S_Pure _ -> ()
+  | S_Ctx _ _ h' -> term_site h'
+
+let step_term_shape #sg #gi #ra #st #e #ra' #st' #e' h = term_site h

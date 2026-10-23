@@ -244,6 +244,10 @@ let ext_cancel e e' r0 r1 =
 
 let ext_ty_cancel k t t' r0 r1 = ext_cancel (EntTy k t) (EntTy k t') r0 r1
 
+let ext_other_entry k k' t0 t1 r0 r1 =
+  mem_entries_ext (EntTy k t0) r0 (k, PTy (canon t0));
+  mem_entries_ext (EntTy k' t1) r1 (k, PTy (canon t0))
+
 (* Extension under union. *)
 
 let union_ext_l en r r3 =
