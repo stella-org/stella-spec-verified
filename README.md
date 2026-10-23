@@ -34,12 +34,13 @@ Proven so far:
 - Typing is preserved through the substitutions within reduction (β, `let`, join points, decision trees, and `letrec` allocation which replaces the members with `force ν`).
 - A top-level value, instantiated at any kinds, is typed in every context that keeps the layouts of its regions.
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
+- The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
 
-Under review: the reduction relation of the pure fragment (global environment, evaluation contexts, head rules), typing at a frame, canonical forms, and the soundness of `match` occurrences.
+Under review: for the pure rules, a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
 
 Planned:
 
-- Preservation and progress for the pure fragment, then extended to effects, regions and cells, and `letrec` with its store.
+- Preservation and progress extended to effects, regions and cells, and `letrec` with its store, and chained into type safety for whole runs.
 - Effect safety: a well-typed program never reaches an unhandled `perform`.
 - Initialization safety: a well-typed program never reads an uninitialized `letrec` binding, and in particular never re-enters an initializer that is still being evaluated (the `φ_init` fault).
 - Erasure: each typed reduction step corresponds to zero or one step of the erased program, with the same faults.
@@ -52,7 +53,13 @@ What this repository establishes about Stella rests on the following, which it d
 - Adequacy: the F* definitions of syntax, kinding, typing, and reduction faithfully encode the Typed Core chapters of the specification, as revised by stella-lang's Proposal 14. [Design §6.1](docs/design/01-Representation.md#61-differences-from-the-current-specification) lists the known differences.
 - On source terms, the typing relation here includes the specification's: every source term the specification types is typed here at the same type. This inclusion is a design property and is not proved, and the soundness theorems reach the programs the specification accepts only through it.
 - A well-formed global signature Σ (`sig_ok`). Checking declarations and modules (`Σ ⊢ decl ⊣ Σ'`) is not formalized.
-- Foreign functions enter reduction through an entry of the global environment: a typed adapter, an erased function, and an erased precondition. The theorems assume the entries conform to Σ, erasure coherence included, and that the program calls each foreign inside its precondition. Only Core-modelled foreigns are represented, so foreigns whose behaviour depends on hidden state, such as `Base.Array.unsafe*`, are out of scope.
+- Foreign functions are supplied by entries in the global environment. Each entry contains a typed
+  adapter, an erased implementation, and a precondition on erased arguments.
+- The theorems assume that these entries conform to `Σ` and that the typed and erased results agree
+  under erasure. Progress additionally assumes that every foreign call satisfies its precondition.
+- Only *Core-modelled* foreigns are represented: foreigns whose behaviour depends on hidden state,
+  such as `Base.Array.unsafe*`, are outside the model.
+
 - The Core type checker in stella-lang is not verified against this typing relation. It is trusted to accept only programs the specification types. Differential testing against an executable Core evaluator extracted from this development would strengthen this assumption, but no such evaluator exists yet.
 
 ## References
