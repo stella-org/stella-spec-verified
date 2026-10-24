@@ -32,7 +32,9 @@ open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
 open Stella.Core.Sig.Wf
+open Stella.Core.Entail
 open Stella.Core.Context
+open Stella.Core.Kinding
 open Stella.Core.Kinding.Subst
 open Stella.Core.Typing.Aux
 open Stella.Core.Typing
@@ -134,6 +136,69 @@ val dt_typing_weaken_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: oc
   (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (a: atom) (l: layout)
   : Pure (dt_typing sg ln ({ g with regions = (a, l) :: g.regions }) d om dt t r)
          (requires ~(L.mem a (rdom g)))
+         (ensures fun _ -> True)
+
+(** `ctx_weaker` is reflexive, and holds again under a term binder, a
+    telescope of them, and a region entered on both sides. *)
+val ctx_weaker_refl (g: ctx) : Lemma (ctx_weaker g g)
+
+val ctx_weaker_push_var (g g': ctx) (t: typ)
+  : Lemma (requires ctx_weaker g g') (ensures ctx_weaker (push_var g t) (push_var g' t))
+
+val ctx_weaker_push_vars (g g': ctx) (ts: list typ)
+  : Lemma (requires ctx_weaker g g') (ensures ctx_weaker (push_vars g ts) (push_vars g' ts))
+
+val ctx_weaker_enter_region (g g': ctx) (a: atom) (l: layout)
+  : Lemma (requires ctx_weaker g g')
+          (ensures ctx_weaker (enter_region g a l) (enter_region g' a l) /\
+                   (~(L.mem a (rdom g')) ==> ~(L.mem a (rdom g))))
+
+(** The side conditions the rules check in `g` hold in `g'`: kinding,
+    keys, entailment, the closed kinding in the regions, and the layout of
+    every region. *)
+val ctx_weaker_facts (sg: sig) (g g': ctx)
+  : Lemma (requires ctx_weaker g g')
+          (ensures (forall (t: typ) (k: kind). {:pattern check sg g' t k}
+                      check sg g t k ==> check sg g' t k) /\
+                   (forall (ts: list typ) (ks: list kind). {:pattern check_tys sg g' ts ks}
+                      check_tys sg g ts ks ==> check_tys sg g' ts ks) /\
+                   (forall (ts: list typ). {:pattern tys_ok sg g' ts}
+                      tys_ok sg g ts ==> tys_ok sg g' ts) /\
+                   (forall (k: key) (e: elt_kind). {:pattern key_ok sg g' k e}
+                      key_ok sg g k e ==> key_ok sg g' k e) /\
+                   (forall (c: constr). {:pattern entails (hyps g') c}
+                      entails (hyps g) c ==> entails (hyps g') c) /\
+                   (forall (t: typ) (k: kind). {:pattern check sg (closed_ctx g'.regions) t k}
+                      check sg (closed_ctx g.regions) t k ==>
+                      check sg (closed_ctx g'.regions) t k) /\
+                   (forall (a: atom). {:pattern L.assoc a g'.regions}
+                      Some? (L.assoc a g.regions) ==> L.assoc a g'.regions == L.assoc a g.regions))
+
+(** The other judgements, in place. *)
+val exps_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#es: list exp) (#ts: list typ) (h: exps_typing sg ln g d r es ts) (g': ctx)
+  : Pure (exps_typing sg ln g' d r es ts) (requires ctx_weaker g g') (ensures fun _ -> True)
+
+val chain_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#e: exp)
+  (h: chain_typing sg ln g d r e) (g': ctx)
+  : Pure (chain_typing sg ln g' d r e) (requires ctx_weaker g g') (ensures fun _ -> True)
+
+val cells_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#cells: list (key & exp))
+  (#lay: layout) (h: cells_typing sg ln g cells lay) (g': ctx)
+  : Pure (cells_typing sg ln g' cells lay) (requires ctx_weaker g g') (ensures fun _ -> True)
+
+val match_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ)
+  (#th: list exp) (#om: octx) (h: match_typing sg ln g d r th om) (g': ctx)
+  : Pure (match_typing sg ln g' d r th om) (requires ctx_weaker g g') (ensures fun _ -> True)
+
+val dt_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#om: octx)
+  (#dt: dtree) (#t #r: typ) (h: dt_typing sg ln g d om dt t r) (g': ctx)
+  : Pure (dt_typing sg ln g' d om dt t r) (requires ctx_weaker g g') (ensures fun _ -> True)
+
+val clauses_typing_weaken_ext (#sg: sig) (#ln: lctx) (#g: ctx) (#ei: effect_info)
+  (#ts: list typ) (#r #b: typ) (#cs: list clause) (h: clauses_typing sg ln g ei ts r b cs)
+  (g': ctx)
+  : Pure (clauses_typing sg ln g' ei ts r b cs) (requires ctx_weaker g g')
          (ensures fun _ -> True)
 
 (** * The location context `Γ_N` *)

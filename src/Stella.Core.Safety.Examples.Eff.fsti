@@ -10,7 +10,9 @@
  * which conforms at every pair of run-time contexts (`empty_genv_ok`),
  * and the run-time contexts are empty. The steps are those of
  * `Stella.Core.Semantics.Examples.Eff`, taken in that environment, which
- * no rule of operations and handlers reads.
+ * no rule of operations and handlers reads. No step allocates a region
+ * name, so the run-time contexts after each step are empty as well
+ * (`Stella.Core.Safety.Preservation.rdom_in_nil`).
  *
  *   - A `full` clause resuming once:
  *     `handle (perform Console.log "hi") with h_once : Unit ! ()` steps to

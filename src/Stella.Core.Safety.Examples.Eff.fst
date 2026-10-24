@@ -3,9 +3,9 @@
    row-membership and equality premises are closed facts established by
    normalization (`assert_norm`). Each step is built from its rule as in
    `Stella.Core.Semantics.Examples.Eff`, in the empty environment, and its
-   reduct is the term of the interface by normalization, as is the fact
-   that it uses no rule of regions and cells (`stage6_step`). The reducts
-   are typed by the theorems, never by hand. *)
+   reduct is the term of the interface by normalization. The reducts are
+   typed by the theorems, never by hand, under the `Γ_R2` preservation
+   gives, which is empty since no name is allocated (`rdom_in_nil`). *)
 module Stella.Core.Safety.Examples.Eff
 open Stella.Core.Syntax
 open Stella.Core.Subst
@@ -202,10 +202,17 @@ let full_once_step_e =
   retype_step (EHandle log_hi h_once) (CTerm (EApp (cont_unit h_once) unit_v))
     (S_Eff #_ #_ #[] #[] eh)
 
+(* A derivation under the empty `Γ_R2`. *)
+let at_nil (#d: jctx) (#e: exp) (#t #r: typ) (rs: list (atom & layout))
+  (h: typing eff_sig [] (closed_ctx rs) d e t r)
+  : Pure (typing eff_sig [] (closed_ctx []) d e t r) (requires rs == []) (ensures fun _ -> True) =
+  h
+
 let full_once_reduct_typing () =
   eff_premises ();
-  assert_norm (stage6_step full_once_step_e);
-  preservation full_once_typing full_once_step_e
+  let p = preservation full_once_typing full_once_step_e in
+  rdom_in_nil p.rs';
+  at_nil p.rs' p.der
 
 (* * A `fast` clause *)
 
@@ -237,8 +244,9 @@ let fast_step_e =
 
 let fast_reduct_typing () =
   eff_premises ();
-  assert_norm (stage6_step fast_step_e);
-  preservation fast_typing fast_step_e
+  let p = preservation fast_typing fast_step_e in
+  rdom_in_nil p.rs';
+  at_nil p.rs' p.der
 
 (* * A continuation that leaves its clause *)
 
@@ -313,13 +321,19 @@ let reify_preserved () =
   FStar.Classical.exists_intro
     (fun (_: typing eff_sig [] (closed_ctx []) [] reify_prog t_unit TRowEmpty) -> True)
     reify_prog_typing;
-  assert_norm (stage6_step reify_step_1 /\ stage6_step reify_step_2);
   preservation_typed [] [] t_unit reify_step_1;
+  eliminate exists (rs1: list (atom & layout)).
+    rctx_after eff_sig empty_genv [] [] [] rs1 /\ typed eff_sig [] (closed_ctx rs1) reify_1 t_unit
+  with rdom_in_nil rs1;
   preservation_typed [] [] t_unit reify_step_2;
+  eliminate exists (rs2: list (atom & layout)).
+    rctx_after eff_sig empty_genv [] [] [] rs2 /\ typed eff_sig [] (closed_ctx rs2) reify_2 t_unit
+  with rdom_in_nil rs2;
   assert_norm (covers eff_sig empty_genv reify_prog);
   preservation_covers reify_prog_typing reify_step_1;
-  let h1 = preservation reify_prog_typing reify_step_1 in
-  preservation_covers h1 reify_step_2
+  let p1 = preservation reify_prog_typing reify_step_1 in
+  rdom_in_nil p1.rs';
+  preservation_covers (at_nil p1.rs' p1.der) reify_step_2
 
 (* * Progress *)
 
@@ -345,7 +359,6 @@ let handled_progress_steps () =
 
 let reify_effect_safe () =
   eff_premises ();
-  assert_norm (stage6_steps reify_run_0 /\ stage6_steps reify_run_1 /\ stage6_steps reify_run_2);
   effect_safety reify_prog_typing reify_run_0;
   effect_safety reify_prog_typing reify_run_1;
   effect_safety reify_prog_typing reify_run_2

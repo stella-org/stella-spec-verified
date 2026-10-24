@@ -32,6 +32,7 @@
 module Stella.Core.Typing.Plug
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Region
 open Stella.Core.Rows
 open Stella.Core.Rows.Lemmas
 open Stella.Core.Entail
@@ -49,6 +50,7 @@ open Stella.Core.Typing.Regularity
 open Stella.Core.Typing.Inversion
 open Stella.Core.Typing.Chain
 open Stella.Core.Typing.Values
+open Stella.Core.Typing.Weaken
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
 open Stella.Core.Semantics.Step
@@ -193,15 +195,18 @@ let plug1_inv_conv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#f: frame) (#e: 
          (ensures fun _ -> True) =
   hole_conv f d t0 r0 t r p.hd p.ht p.hr;
   { hd = p.hd; ht = p.ht; hr = p.hr; hole = p.hole; hole_ctx = ();
-    fill = (fun (e': exp) (h': typing sg ln g p.hd e' p.ht p.hr) ->
-              T_Conv #sg #ln #g #d #(plug1 f e') #t0 #r0 #t #r (p.fill e' h') () ()) }
+    fill = (fun (g': ctx) (e': exp) (h': typing sg ln g' p.hd e' p.ht p.hr) ->
+              ctx_weaker_facts sg g g';
+              T_Conv #sg #ln #g' #d #(plug1 f e') #t0 #r0 #t #r (p.fill g' e' h') () ()) }
 
 (* The lists of `case`, `jump` and `region`, split at the hole. *)
 noeq type exps_hole (sg: sig) (ln: lctx) (g: ctx) (d: jctx) (r: typ) (vs: list exp) (e: exp)
   (es: list exp) (ts: list typ) = {
   xh_t: typ;
   xh_h: typing sg ln g d e xh_t r;
-  xh_fill: e': exp -> typing sg ln g d e' xh_t r -> exps_typing sg ln g d r (L.append vs (e' :: es)) ts;
+  xh_fill: g': ctx -> e': exp -> typing sg ln g' d e' xh_t r ->
+           Pure (exps_typing sg ln g' d r (L.append vs (e' :: es)) ts)
+                (requires ctx_weaker g g') (ensures fun _ -> True);
 }
 
 let rec exps_split (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (vs: list exp) (e: exp)
@@ -212,13 +217,15 @@ let rec exps_split (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (vs: li
     (match h with
      | TE_Cons #_ #_ #_ #_ #_ #_ #_ #t1 #_ h1 hrest ->
        { xh_t = t1; xh_h = h1;
-         xh_fill = (fun (e': exp) (h': typing sg ln g d e' t1 r) -> TE_Cons h' hrest) })
+         xh_fill = (fun (g': ctx) (e': exp) (h': typing sg ln g' d e' t1 r) ->
+                      TE_Cons h' (exps_typing_weaken_ext hrest g')) })
   | v :: vs' ->
     (match h with
      | TE_Cons #_ #_ #_ #_ #_ #_ #_ #_ #_ h1 hrest ->
        let p = exps_split vs' e es hrest in
        { xh_t = p.xh_t; xh_h = p.xh_h;
-         xh_fill = (fun (e': exp) (h': typing sg ln g d e' p.xh_t r) -> TE_Cons h1 (p.xh_fill e' h')) })
+         xh_fill = (fun (g': ctx) (e': exp) (h': typing sg ln g' d e' p.xh_t r) ->
+                      TE_Cons (typing_weaken_ext h1 g') (p.xh_fill g' e' h')) })
 
 (* The domains of two arrows are equal when their instances are. *)
 let fun_dom_eq (sg: sig) (th0: tsub) (s0 a1 rho1 b1: typ) (th1: tsub) (s1 a2 rho2 b2: typ)
@@ -246,12 +253,14 @@ let fill_app_arg (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (fn e: ex
   (th: tsub) (#s0: typ) (#th0: tsub) (#a1 #rho1 #b1: typ)
   (hc0: chain_typing sg ln g [] r fn)
   (sq0: squash (chain_cursor sg fn == Some (s0, th0) /\ as_function sg s0 == Some (a1, rho1, b1)))
-  (e': exp) (hv': typing sg ln g [] e' (sub_ty th0 a1) r)
-  : Pure (typing sg ln g d (EApp fn e') (sub_ty th s) r)
-         (requires chain_cursor sg (EApp fn e) == Some (s, th)) (ensures fun _ -> True) =
+  (g': ctx) (e': exp) (hv': typing sg ln g' [] e' (sub_ty th0 a1) r)
+  : Pure (typing sg ln g' d (EApp fn e') (sub_ty th s) r)
+         (requires ctx_weaker g g' /\ chain_cursor sg (EApp fn e) == Some (s, th))
+         (ensures fun _ -> True) =
   chain_cursor_replace_val sg fn e e';
-  T_Chain #sg #ln #g #d #(EApp fn e') #s #th #r
-    (TS_Val #sg #ln #g #[] #r #fn #e' #s0 #th0 #a1 #rho1 #b1 hc0 sq0 hv') ()
+  let hc0' = chain_typing_weaken_ext hc0 g' in
+  T_Chain #sg #ln #g' #d #(EApp fn e') #s #th #r
+    (TS_Val #sg #ln #g' #[] #r #fn #e' #s0 #th0 #a1 #rho1 #b1 hc0' sq0 hv') ()
 
 let pi_app_arg (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (fn e: exp) (#t #r: typ)
   (h: typing sg ln g d (EApp fn e) t r{~(T_Conv? h)})
@@ -259,7 +268,8 @@ let pi_app_arg (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (fn e: exp) (#t #r: t
   match h with
   | T_App #_ #_ #_ #_ #_ #_ #t1 #_ #_ h1 h2 ->
     { hd = []; ht = t1; hr = r; hole = h2; hole_ctx = ();
-      fill = (fun (e': exp) (h2': typing sg ln g [] e' t1 r) -> T_App #sg #ln #g #d h1 h2') }
+      fill = (fun (g': ctx) (e': exp) (h2': typing sg ln g' [] e' t1 r) ->
+                T_App #sg #ln #g' #d (typing_weaken_ext h1 g') h2') }
   | T_Chain #_ #_ #_ #_ #_ #s #th #_ hc _ ->
     (match hc with
      | TS_Val #_ #_ #_ #_ #_ #_ #_ #s0 #th0 #a1 #rho1 #b1 hc0 sq0 hv ->
@@ -272,9 +282,9 @@ let pi_app_arg (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (fn e: exp) (#t #r: t
 let fill_app_fun (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (v e: exp) (s: typ)
   (th: tsub) (s0: typ) (th0: tsub) (a1 rho1 b1: typ)
   (hv: typing sg ln g [] v (sub_ty th0 a1) r)
-  (e': exp) (h': typing sg ln g [] e' (sub_ty th0 s0) r)
-  : Pure (typing sg ln g d (EApp e' v) (sub_ty th s) r)
-         (requires sig_ok sg /\ chain_cursor sg (EApp e v) == Some (s, th) /\
+  (g': ctx) (e': exp) (h': typing sg ln g' [] e' (sub_ty th0 s0) r)
+  : Pure (typing sg ln g' d (EApp e' v) (sub_ty th s) r)
+         (requires sig_ok sg /\ ctx_weaker g g' /\ chain_cursor sg (EApp e v) == Some (s, th) /\
                    as_function sg s0 == Some (a1, rho1, b1) /\
                    cursor_kept sg (EApp e v) (EApp e' v))
          (ensures fun _ -> True) =
@@ -285,10 +295,10 @@ let fill_app_fun (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (v e: exp
   let Some (a2, rho2, b2) = as_function sg s1 in
   fun_dom_eq sg th0 s0 a1 rho1 b1 th1 s1 a2 rho2 b2;
   chain_typing_args_ok hc';
-  chain_fun_regular sg g e' s1 th1 a2 rho2 b2;
-  let hv' : typing sg ln g [] v (sub_ty th1 a2) r = T_Conv hv () () in
-  T_Chain #sg #ln #g #d #(EApp e' v) #s #th #r
-    (TS_Val #sg #ln #g #[] #r #e' #v #s1 #th1 #a2 #rho2 #b2 hc' () hv') ()
+  chain_fun_regular sg g' e' s1 th1 a2 rho2 b2;
+  let hv' : typing sg ln g' [] v (sub_ty th1 a2) r = T_Conv (typing_weaken_ext hv g') () () in
+  T_Chain #sg #ln #g' #d #(EApp e' v) #s #th #r
+    (TS_Val #sg #ln #g' #[] #r #e' #v #s1 #th1 #a2 #rho2 #b2 hc' () hv') ()
 
 let pi_app_fun (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (v e: exp) (#t #r: typ)
   (h: typing sg ln g d (EApp e v) t r{~(T_Conv? h)})
@@ -296,8 +306,8 @@ let pi_app_fun (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (v e: exp) (#t #r: ty
   match h with
   | T_App #_ #_ #_ #_ #_ #_ #t1 #t2 #_ h1 h2 ->
     { hd = []; ht = t_fun t1 r t2; hr = r; hole = h1; hole_ctx = ();
-      fill = (fun (e': exp) (h1': typing sg ln g [] e' (t_fun t1 r t2) r) ->
-                T_App #sg #ln #g #d h1' h2) }
+      fill = (fun (g': ctx) (e': exp) (h1': typing sg ln g' [] e' (t_fun t1 r t2) r) ->
+                T_App #sg #ln #g' #d h1' (typing_weaken_ext h2 g')) }
   | T_Chain #_ #_ #_ #_ #_ #s #th #_ hc _ ->
     (match hc with
      | TS_Val #_ #_ #_ #_ #_ #_ #_ #s0 #th0 #a1 #rho1 #b1 hc0 _ hv ->
@@ -310,19 +320,20 @@ let pi_app_fun (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (v e: exp) (#t #r: ty
 
 let fill_tyapp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (sa: typ) (e: exp) (s: typ)
   (th: tsub) (k: kind) (b: typ) (th0: tsub) (sqk: squash (check sg g sa k))
-  (e': exp) (h': typing sg ln g [] e' (sub_ty th0 (TForall k b)) r)
-  : Pure (typing sg ln g d (ETyApp e' sa) (sub_ty th s) r)
-         (requires sig_ok sg /\ chain_cursor sg (ETyApp e sa) == Some (s, th) /\
+  (g': ctx) (e': exp) (h': typing sg ln g' [] e' (sub_ty th0 (TForall k b)) r)
+  : Pure (typing sg ln g' d (ETyApp e' sa) (sub_ty th s) r)
+         (requires sig_ok sg /\ ctx_weaker g g' /\ chain_cursor sg (ETyApp e sa) == Some (s, th) /\
                    cursor_kept sg (ETyApp e sa) (ETyApp e' sa))
          (ensures fun _ -> True) =
+  ctx_weaker_facts sg g g';
   decompose_prefix e' (STy sa);
   chain_cursor_apply_arg sg e' (STy sa);
   let hc' = chain_normal h' in
   let Some (s1, th1) = chain_cursor sg e' in
   let TForall k1 b1 = s1 in
   ty_eq_forall_inv k k1 (sub_ty (up_tsub th0) b) (sub_ty (up_tsub th1) b1);
-  T_Chain #sg #ln #g #d #(ETyApp e' sa) #s #th #r
-    (TS_Ty #sg #ln #g #[] #r #e' #sa #k1 #b1 #th1 hc' () sqk) ()
+  T_Chain #sg #ln #g' #d #(ETyApp e' sa) #s #th #r
+    (TS_Ty #sg #ln #g' #[] #r #e' #sa #k1 #b1 #th1 hc' () ()) ()
 
 let pi_tyapp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (sa: typ) (e: exp) (#t #r: typ)
   (h: typing sg ln g d (ETyApp e sa) t r{~(T_Conv? h)})
@@ -330,8 +341,9 @@ let pi_tyapp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (sa: typ) (e: exp) (#t 
   match h with
   | T_TyApp #_ #_ #_ #_ #_ #_ #k #t0 #_ h1 sq ->
     { hd = []; ht = TForall k t0; hr = r; hole = h1; hole_ctx = ();
-      fill = (fun (e': exp) (h1': typing sg ln g [] e' (TForall k t0) r) ->
-                T_TyApp #sg #ln #g #d h1' sq) }
+      fill = (fun (g': ctx) (e': exp) (h1': typing sg ln g' [] e' (TForall k t0) r) ->
+                ctx_weaker_facts sg g g';
+                T_TyApp #sg #ln #g' #d h1' ()) }
   | T_Chain #_ #_ #_ #_ #_ #s #th #_ hc _ ->
     (match hc with
      | TS_Ty #_ #_ #_ #_ #_ #_ #_ #k #b #th0 hc0 _ sqk ->
@@ -344,20 +356,21 @@ let pi_tyapp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (sa: typ) (e: exp) (#t 
 
 let fill_capp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (e: exp) (s: typ)
   (th: tsub) (c: constr) (b: typ) (th0: tsub) (sqc: squash (entails (hyps g) (sub_constr th0 c)))
-  (e': exp) (h': typing sg ln g [] e' (sub_ty th0 (TConstr c b)) r)
-  : Pure (typing sg ln g d (ECApp e') (sub_ty th s) r)
-         (requires sig_ok sg /\ chain_cursor sg (ECApp e) == Some (s, th) /\
+  (g': ctx) (e': exp) (h': typing sg ln g' [] e' (sub_ty th0 (TConstr c b)) r)
+  : Pure (typing sg ln g' d (ECApp e') (sub_ty th s) r)
+         (requires sig_ok sg /\ ctx_weaker g g' /\ chain_cursor sg (ECApp e) == Some (s, th) /\
                    cursor_kept sg (ECApp e) (ECApp e'))
          (ensures fun _ -> True) =
+  ctx_weaker_facts sg g g';
   decompose_prefix e' SConstr;
   chain_cursor_apply_arg sg e' SConstr;
   let hc' = chain_normal h' in
   let Some (s1, th1) = chain_cursor sg e' in
   let TConstr c1 b1 = s1 in
   ty_eq_constr_inv (sub_constr th0 c) (sub_constr th1 c1) (sub_ty th0 b) (sub_ty th1 b1);
-  entails_constr_eq (hyps g) (sub_constr th0 c) (sub_constr th1 c1);
-  T_Chain #sg #ln #g #d #(ECApp e') #s #th #r
-    (TS_Constr #sg #ln #g #[] #r #e' #c1 #b1 #th1 hc' () ()) ()
+  entails_constr_eq (hyps g') (sub_constr th0 c) (sub_constr th1 c1);
+  T_Chain #sg #ln #g' #d #(ECApp e') #s #th #r
+    (TS_Constr #sg #ln #g' #[] #r #e' #c1 #b1 #th1 hc' () ()) ()
 
 let pi_capp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (e: exp) (#t #r: typ)
   (h: typing sg ln g d (ECApp e) t r{~(T_Conv? h)})
@@ -365,8 +378,9 @@ let pi_capp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (e: exp) (#t #r: typ)
   match h with
   | T_CApp #_ #_ #_ #_ #_ #c #t0 #_ h1 sq ->
     { hd = []; ht = TConstr c t0; hr = r; hole = h1; hole_ctx = ();
-      fill = (fun (e': exp) (h1': typing sg ln g [] e' (TConstr c t0) r) ->
-                T_CApp #sg #ln #g #d h1' sq) }
+      fill = (fun (g': ctx) (e': exp) (h1': typing sg ln g' [] e' (TConstr c t0) r) ->
+                ctx_weaker_facts sg g g';
+                T_CApp #sg #ln #g' #d h1' ()) }
   | T_Chain #_ #_ #_ #_ #_ #s #th #_ hc _ ->
     (match hc with
      | TS_Constr #_ #_ #_ #_ #_ #_ #c #b #th0 hc0 _ sqc ->
@@ -377,7 +391,10 @@ let pi_capp (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (e: exp) (#t #r: typ)
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
 
-(* ** The other frames *)
+(* ** The other frames
+
+   Each fill weakens the frame's other premises to `g'`; its side
+   conditions hold there by `ctx_weaker_facts`. *)
 
 let mk_inv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#f: frame) (#e: exp) (#t #r: typ)
   (#hd: jctx) (#ht #hr: typ) (hole: typing sg ln g hd e ht hr)
@@ -390,7 +407,8 @@ let pi_openeff (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (r': typ) (e: exp) (#
   : Pure (plug1_inv sg ln g d (FOpenEff r') e t r)
          (requires not (V.is_value sg (EOpenEff r' e))) (ensures fun _ -> True) =
   match h with
-  | T_OpenEff h1 sq -> mk_inv h1 () (fun e' h1' -> T_OpenEff h1' sq)
+  | T_OpenEff h1 _ ->
+    mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_OpenEff h1' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -399,7 +417,8 @@ let pi_openeffc (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (r': typ) (e: exp) (
   (h: typing sg ln g d (EOpenEffC r' e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FOpenEffC r') e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_OpenEffC h1 sq -> mk_inv h1 () (fun e' h1' -> T_OpenEffC h1' sq)
+  | T_OpenEffC h1 _ ->
+    mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_OpenEffC h1' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -409,7 +428,9 @@ let pi_extend_l (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (e2 e: exp)
   : Pure (plug1_inv sg ln g d (FExtendL k e2) e t r)
          (requires not (V.is_value sg (EExtend k e e2))) (ensures fun _ -> True) =
   match h with
-  | T_Extend h1 h2 sq -> mk_inv h1 () (fun e' h1' -> T_Extend h1' h2 sq)
+  | T_Extend h1 h2 _ ->
+    mk_inv h1 () (fun g' e' h1' ->
+      ctx_weaker_facts sg g g'; T_Extend #sg #ln #g' #d #k h1' (typing_weaken_ext h2 g') ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -419,7 +440,9 @@ let pi_extend_r (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (v1 e: exp)
   : Pure (plug1_inv sg ln g d (FExtendR k v1) e t r)
          (requires not (V.is_value sg (EExtend k v1 e))) (ensures fun _ -> True) =
   match h with
-  | T_Extend h1 h2 sq -> mk_inv h2 () (fun e' h2' -> T_Extend h1 h2' sq)
+  | T_Extend h1 h2 _ ->
+    mk_inv h2 () (fun g' e' h2' ->
+      ctx_weaker_facts sg g g'; T_Extend #sg #ln #g' #d #k (typing_weaken_ext h1 g') h2' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -428,7 +451,9 @@ let pi_update_l (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (e2 e: exp)
   (h: typing sg ln g d (EUpdate k e e2) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FUpdateL k e2) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Update h1 h2 sq -> mk_inv h1 () (fun e' h1' -> T_Update h1' h2 sq)
+  | T_Update h1 h2 _ ->
+    mk_inv h1 () (fun g' e' h1' ->
+      ctx_weaker_facts sg g g'; T_Update #sg #ln #g' #d #k h1' (typing_weaken_ext h2 g') ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -437,7 +462,9 @@ let pi_update_r (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (v1 e: exp)
   (h: typing sg ln g d (EUpdate k v1 e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FUpdateR k v1) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Update h1 h2 sq -> mk_inv h2 () (fun e' h2' -> T_Update h1 h2' sq)
+  | T_Update h1 h2 _ ->
+    mk_inv h2 () (fun g' e' h2' ->
+      ctx_weaker_facts sg g g'; T_Update #sg #ln #g' #d #k (typing_weaken_ext h1 g') h2' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -446,7 +473,9 @@ let pi_merge_l (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (e2 e: exp) (#t #r: t
   (h: typing sg ln g d (EMerge e e2) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FMergeL e2) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Merge h1 h2 sq -> mk_inv h1 () (fun e' h1' -> T_Merge h1' h2 sq)
+  | T_Merge h1 h2 _ ->
+    mk_inv h1 () (fun g' e' h1' ->
+      ctx_weaker_facts sg g g'; T_Merge h1' (typing_weaken_ext h2 g') ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -455,7 +484,9 @@ let pi_merge_r (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (v1 e: exp) (#t #r: t
   (h: typing sg ln g d (EMerge v1 e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FMergeR v1) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Merge h1 h2 sq -> mk_inv h2 () (fun e' h2' -> T_Merge h1 h2' sq)
+  | T_Merge h1 h2 _ ->
+    mk_inv h2 () (fun g' e' h2' ->
+      ctx_weaker_facts sg g g'; T_Merge (typing_weaken_ext h1 g') h2' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -464,7 +495,7 @@ let pi_select (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (e: exp) (#t 
   (h: typing sg ln g d (ESelect k e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FSelect k) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Select h1 sq -> mk_inv h1 () (fun e' h1' -> T_Select h1' sq)
+  | T_Select h1 _ -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Select h1' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -473,7 +504,7 @@ let pi_restrict (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (e: exp) (#
   (h: typing sg ln g d (ERestrict k e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FRestrict k) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Restrict h1 sq -> mk_inv h1 () (fun e' h1' -> T_Restrict h1' sq)
+  | T_Restrict h1 _ -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Restrict h1' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -483,7 +514,7 @@ let pi_inject (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (r0: typ) (e:
   : Pure (plug1_inv sg ln g d (FInject k r0) e t r)
          (requires not (V.is_value sg (EInject k r0 e))) (ensures fun _ -> True) =
   match h with
-  | T_Inject h1 sq1 sq2 -> mk_inv h1 () (fun e' h1' -> T_Inject h1' sq1 sq2)
+  | T_Inject h1 _ _ -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Inject h1' () ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -493,7 +524,7 @@ let pi_weaken (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (t1: typ) (e:
   : Pure (plug1_inv sg ln g d (FWeaken k t1) e t r)
          (requires not (V.is_value sg (EWeaken k t1 e))) (ensures fun _ -> True) =
   match h with
-  | T_Weaken h1 sq1 sq2 -> mk_inv h1 () (fun e' h1' -> T_Weaken h1' sq1 sq2)
+  | T_Weaken h1 _ _ -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Weaken h1' () ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -502,7 +533,7 @@ let pi_absurd (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (t1: typ) (e: exp) (#t
   (h: typing sg ln g d (EAbsurd t1 e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FAbsurd t1) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Absurd h1 sq -> mk_inv h1 () (fun e' h1' -> T_Absurd h1' sq)
+  | T_Absurd h1 _ -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Absurd h1' ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -511,7 +542,11 @@ let pi_let (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (t1: typ) (e2 e: exp) (#t
   (h: typing sg ln g d (ELet t1 e e2) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FLet t1 e2) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Let sq h1 h2 -> mk_inv h1 () (fun e' h1' -> T_Let sq h1' h2)
+  | T_Let _ h1 h2 ->
+    mk_inv h1 () (fun g' e' h1' ->
+      ctx_weaker_facts sg g g';
+      ctx_weaker_push_var g g' t1;
+      T_Let () h1' (typing_weaken_ext h2 (push_var g' t1)))
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -522,7 +557,7 @@ let pi_case (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (vs es: list exp) (dt: d
   match h with
   | T_Case hes hdt ->
     let p = exps_split vs e es hes in
-    mk_inv p.xh_h () (fun e' h' -> T_Case (p.xh_fill e' h') hdt)
+    mk_inv p.xh_h () (fun g' e' h' -> T_Case (p.xh_fill g' e' h') (dt_typing_weaken_ext hdt g'))
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -534,7 +569,9 @@ let pi_guard (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (th: list exp) (dt1 dt2
   | T_Match om hes sqv hm hdt ->
     (match hdt with
      | TD_Guard he h1 h2 ->
-       mk_inv he () (fun e' he' -> T_Match om hes sqv hm (TD_Guard he' h1 h2))
+       mk_inv he () (fun g' e' he' ->
+         T_Match om (exps_typing_weaken_ext hes g') sqv (match_typing_weaken_ext hm g')
+           (TD_Guard he' (dt_typing_weaken_ext h1 g') (dt_typing_weaken_ext h2 g')))
      | _ -> false_elim ())
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
@@ -544,7 +581,11 @@ let pi_letjoin (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (ts: list typ) (t1: t
   (#t #r: typ) (h: typing sg ln g d (ELetJoin ts t1 e1 e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FLetJoin ts t1 e1) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_LetJoin sq h1 h2 -> mk_inv h2 () (fun e' h2' -> T_LetJoin sq h1 h2')
+  | T_LetJoin _ h1 h2 ->
+    mk_inv h2 () (fun g' e' h2' ->
+      ctx_weaker_facts sg g g';
+      ctx_weaker_push_vars g g' ts;
+      T_LetJoin () (typing_weaken_ext h1 (push_vars g' ts)) h2')
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -553,9 +594,10 @@ let pi_jump (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (j: nat) (vs es: list ex
   (#t #r: typ) (h: typing sg ln g d (EJump j (L.append vs (e :: es))) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FJump j vs es) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Jump sq1 sq2 hes ->
+  | T_Jump sq1 _ hes ->
     let p = exps_split vs e es hes in
-    mk_inv p.xh_h () (fun e' h' -> T_Jump sq1 sq2 (p.xh_fill e' h'))
+    mk_inv p.xh_h () (fun g' e' h' ->
+      ctx_weaker_facts sg g g'; T_Jump sq1 () (p.xh_fill g' e' h'))
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -564,7 +606,8 @@ let pi_perform (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (k: key) (op: opname)
   (e: exp) (#t #r: typ) (h: typing sg ln g d (EPerform k op ss e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FPerform k op ss) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Perform ts sq1 sq2 sq3 h1 -> mk_inv h1 () (fun e' h1' -> T_Perform ts sq1 sq2 sq3 h1')
+  | T_Perform ts sq1 sq2 _ h1 ->
+    mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Perform ts sq1 sq2 () h1')
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -573,20 +616,41 @@ let pi_handle (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (hh: handler) (e: exp)
   (h: typing sg ln g d (EHandle e hh) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FHandle hh) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Handle sq1 sq2 sq3 sq4 he hret hcl ->
-    mk_inv he () (fun e' he' -> T_Handle sq1 sq2 sq3 sq4 he' hret hcl)
+  | T_Handle sq1 _ _ sq4 he hret hcl ->
+    mk_inv he () (fun g' e' he' ->
+      ctx_weaker_facts sg g g';
+      ctx_weaker_push_var g g' hh.h_ret_ty;
+      T_Handle sq1 () () sq4 he' (typing_weaken_ext hret (push_var g' hh.h_ret_ty))
+        (clauses_typing_weaken_ext hcl g'))
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
+
+(* The body of a `region`, for every atom fresh for `g'`, which is fresh
+   for `g`. *)
+let region_body_weaken (#sg: sig) (#ln: lctx) (#g: ctx) (#lay: layout) (#body: exp) (#b #r: typ)
+  (hb: (a: atom{~(L.mem a (rdom g)) /\ ~(L.mem a (frn_exp body))} ->
+          typing sg ln (enter_region g a lay) [] (open_region a body) b
+            (TRowExt (EntRegion (RFree a)) r)))
+  (g': ctx)
+  : Pure (a: atom{~(L.mem a (rdom g')) /\ ~(L.mem a (frn_exp body))} ->
+            typing sg ln (enter_region g' a lay) [] (open_region a body) b
+              (TRowExt (EntRegion (RFree a)) r))
+         (requires ctx_weaker g g') (ensures fun _ -> True) =
+  fun (a: atom{~(L.mem a (rdom g')) /\ ~(L.mem a (frn_exp body))}) ->
+    ctx_weaker_enter_region g g' a lay;
+    typing_weaken_ext (hb a) (enter_region g' a lay)
 
 let pi_region (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (lay: list (key & typ)) (vs es: list exp)
   (body e: exp) (#t #r: typ)
   (h: typing sg ln g d (ERegion lay (L.append vs (e :: es)) body) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FRegion lay vs es body) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Region sq1 sq2 hes hb ->
+  | T_Region _ _ hes hb ->
     let p = exps_split vs e es hes in
-    mk_inv p.xh_h () (fun e' h' -> T_Region sq1 sq2 (p.xh_fill e' h') hb)
+    mk_inv p.xh_h () (fun g' e' h' ->
+      ctx_weaker_facts sg g g';
+      T_Region () () (p.xh_fill g' e' h') (region_body_weaken hb g'))
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -595,7 +659,10 @@ let pi_region_open (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (a: atom) (cells:
   (e: exp) (#t #r: typ) (h: typing sg ln g d (ERegionOpen a cells e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FRegionOpen a cells) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_RegionOpen sq1 sq2 sq3 hc hb -> mk_inv hb () (fun e' hb' -> T_RegionOpen sq1 sq2 sq3 hc hb')
+  | T_RegionOpen #_ #_ #_ #_ #_ #_ #_ #lay _ _ sq3 hc hb ->
+    mk_inv hb () (fun g' e' hb' ->
+      ctx_weaker_facts sg g g';
+      T_RegionOpen #sg #ln #g' #d #a #cells #e' #lay () () sq3 (cells_typing_weaken_ext hc g') hb')
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -604,7 +671,9 @@ let pi_write_cell (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (rr: region_ref) (
   (#t #r: typ) (h: typing sg ln g d (EWriteCell rr k e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FWriteCell rr k) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_WriteCell sq1 sq2 h1 -> mk_inv h1 () (fun e' h1' -> T_WriteCell sq1 sq2 h1')
+  | T_WriteCell #_ #_ #_ #_ #_ #_ #_ #lay _ sq2 h1 ->
+    mk_inv h1 () (fun g' e' h1' ->
+      ctx_weaker_facts sg g g'; T_WriteCell #sg #ln #g' #d #_ #k #e' #lay () sq2 h1')
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -613,7 +682,7 @@ let pi_fill (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (nu: atom) (e: exp) (#t 
   (h: typing sg ln g d (EFill nu e) t r{~(T_Conv? h)})
   : Pure (plug1_inv sg ln g d (FFill nu) e t r) (requires True) (ensures fun _ -> True) =
   match h with
-  | T_Fill sq1 sq2 h1 -> mk_inv h1 () (fun e' h1' -> T_Fill sq1 sq2 h1')
+  | T_Fill _ _ h1 -> mk_inv h1 () (fun g' e' h1' -> ctx_weaker_facts sg g g'; T_Fill () () h1')
   | T_Chain _ _ -> false_elim ()
   | T_VariantValue _ _ _ _ _ _ -> false_elim ()
   | _ -> false_elim ()
@@ -700,8 +769,9 @@ let rec tl_typing #sg #ln #g #d #fs #e #t #r h
       tl_fill = (fun (e': exp) (h': typing sg ln g (L.append pre d) e' p2.ht p2.hr) ->
                    let h2 : typing sg ln g p2.hd e' p2.ht p2.hr = h' in
                    letjoin_cursor_kept sg ts t1 e1 e e';
+                   ctx_weaker_refl g;
                    let h3 : typing sg ln g (L.append p1.pre d) (plug1 f e') p1.tl_t p1.tl_r =
-                     p2.fill e' h2 in
+                     p2.fill g e' h2 in
                    let h4 : typing sg ln g d (plug fs' (plug1 f e')) t r = p1.tl_fill (plug1 f e') h3 in
                    (h4 <: typing sg ln g d (plug fs e') t r)) }
 

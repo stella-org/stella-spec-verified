@@ -38,8 +38,9 @@ Proven so far:
 - Effect handlers: return, `full`, and `fast` clauses reduce as the specification gives them, deep and multi-shot.
 - Type safety for the pure and effect rules: a step that uses no rule of regions and cells preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
 - Effect safety for the same rules: under a conforming global environment, from any closed term typed at the empty row, no sequence of such steps reaches a `perform` that no handler of its key encloses.
+- Regions and cells: opening, closing, reading, and writing reduce as the specification gives them, a reference reaches the innermost frame of its name, and a continuation copies the region frames it captures.
 
-Under review: the rules of regions and cells. Opening, closing, reading, and writing reduce as the specification gives them, a reference reaches the innermost frame of its name, and a continuation copies the region frames it captures. Type safety and effect safety must be re-established for these rules, and for those of `letrec` when they are added.
+Under review: preservation of type, ambient row, and coverage, and effect safety, for every rule of the reduction relation so far, the rules of regions and cells included. A step types its reduct under a region context that extends the redex's with the same layouts, an opening adding the region it allocates. One-step progress is not yet extended to regions and cells, and the rules of `letrec` must re-establish these results when they are added.
 
 Planned:
 

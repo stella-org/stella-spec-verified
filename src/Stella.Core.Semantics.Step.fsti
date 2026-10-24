@@ -92,8 +92,7 @@
  * the rules of operations and handlers reduce, and `stage7_frag` the
  * fragment whose terms these and the rules of regions and cells reduce.
  * Each rules out the forms of the rules beyond it, at every node of the
- * term. `stage6_step` picks out the derivations of `step` that use no rule
- * of regions and cells.
+ * term.
  *)
 module Stella.Core.Semantics.Step
 open Stella.Core.Syntax
@@ -703,18 +702,6 @@ val stage6_no_region (#sg: sig) (#gi: genv) (#ra: list atom) (#e: exp) (#ra': li
   (#c: config) (h: region_head sg gi ra e ra' c)
   : Lemma (requires stage6_frag e) (ensures False)
 
-(** The derivation `s` uses no rule of regions and cells: its head rule,
-    under the frames of `S_Ctx` and `S_CtxFault`, is a pure head rule or a
-    rule of operations and handlers. *)
-let rec stage6_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
-  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
-  : Tot bool (decreases s) =
-  match s with
-  | S_Pure _ | S_Eff _ -> true
-  | S_Region _ -> false
-  | S_Ctx _ _ s' -> stage6_step s'
-  | S_CtxFault _ _ s' -> stage6_step s'
-
 (** * Preconditions *)
 
 (** The call of the chain `r = M.f [[κ̄]] ᾱ` respects the precondition of
@@ -836,9 +823,3 @@ val step_term_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: ex
 val step_term_names (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (st' == st /\ (ra' == ra \/ (exists (a: atom). ra' == a :: ra /\ ~(L.mem a ra))))
-
-(** A step of a term of the stage-6 fragment uses no rule of regions and
-    cells. *)
-val stage6_frag_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
-  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
-  : Lemma (requires stage6_frag e) (ensures stage6_step s)

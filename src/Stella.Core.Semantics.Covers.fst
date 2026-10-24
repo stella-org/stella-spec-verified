@@ -16,6 +16,7 @@
 module Stella.Core.Semantics.Covers
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Region
 open Stella.Core.Sig
 open Stella.Core.Typing.Aux
 open Stella.Core.Semantics.Env
@@ -450,11 +451,102 @@ and g_ren_jp_cls (cs: list clause)
   | CFull _ _ _ _ b :: cs' -> g_ren_jp b; g_ren_jp_cls cs'
   | CFast _ _ _ b :: cs' -> g_ren_jp b; g_ren_jp_cls cs'
 
+(* ** Region maps *)
+
+let rec g_rmap (f: nat -> region_ref -> region_ref) (e: exp)
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_exp f d e)}
+                     globals (rmap_exp f d e) == globals e)
+          (decreases e) =
+  match e with
+  | EVar _ | EGlobal _ _ | ELit _ | ERecEmpty | EReadCell _ _ | EForce _ | EOpaque _ _ -> ()
+  | ELam _ _ b | ETyLam _ b | ETyApp b _ | ECLam _ b | ECApp b
+  | ESelect _ b | ERestrict _ b | EInject _ _ b | EWeaken _ _ b
+  | EAbsurd _ b | EPerform _ _ _ b | EOpenEff _ b | EWriteCell _ _ b
+  | EOpenEffC _ b | EFill _ b -> g_rmap f b
+  | EApp e1 e2 | ELet _ e1 e2 | ELetJoin _ _ e1 e2
+  | EExtend _ e1 e2 | EUpdate _ e1 e2 | EMerge e1 e2 -> g_rmap f e1; g_rmap f e2
+  | ELetRec bs b -> g_rmap_binds f bs; g_rmap f b
+  | ECase es dt | EMatch es dt -> g_rmap_exps f es; g_rmap_dt f dt
+  | EJump _ es -> g_rmap_exps f es
+  | EHandle b h -> g_rmap f b; g_rmap f h.h_ret; g_rmap_cls f h.h_clauses
+  | ERegion _ es b -> g_rmap_exps f es; g_rmap f b
+  | ERegionOpen _ th b -> g_rmap_cells f th; g_rmap f b
+
+and g_rmap_exps (f: nat -> region_ref -> region_ref) (es: list exp)
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_exps f d es)}
+                     globals_exps (rmap_exps f d es) == globals_exps es)
+          (decreases es) =
+  match es with
+  | [] -> ()
+  | e :: es' -> g_rmap f e; g_rmap_exps f es'
+
+and g_rmap_binds (f: nat -> region_ref -> region_ref) (bs: list (typ & exp))
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_binds f d bs)}
+                     globals_binds (rmap_binds f d bs) == globals_binds bs)
+          (decreases bs) =
+  match bs with
+  | [] -> ()
+  | (_, e) :: bs' -> g_rmap f e; g_rmap_binds f bs'
+
+and g_rmap_cells (f: nat -> region_ref -> region_ref) (th: list (key & exp))
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_cells f d th)}
+                     globals_cells (rmap_cells f d th) == globals_cells th)
+          (decreases th) =
+  match th with
+  | [] -> ()
+  | (_, e) :: th' -> g_rmap f e; g_rmap_cells f th'
+
+and g_rmap_dt (f: nat -> region_ref -> region_ref) (dt: dtree)
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_dt f d dt)}
+                     globals_dt (rmap_dt f d dt) == globals_dt dt)
+          (decreases dt) =
+  match dt with
+  | DLeaf e -> g_rmap f e
+  | DBind _ dt' -> g_rmap_dt f dt'
+  | DSwitchCtor _ bs df -> g_rmap_brs f bs; g_rmap_odt f df
+  | DSwitchLit _ bs df -> g_rmap_brs f bs; g_rmap_dt f df
+  | DSwitchKey _ bs df -> g_rmap_kbrs f bs; g_rmap_odt f df
+  | DGuard e dt1 dt2 -> g_rmap f e; g_rmap_dt f dt1; g_rmap_dt f dt2
+
+and g_rmap_odt (f: nat -> region_ref -> region_ref) (df: option dtree)
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_odt f d df)}
+                     globals_odt (rmap_odt f d df) == globals_odt df)
+          (decreases df) =
+  match df with
+  | None -> ()
+  | Some dt -> g_rmap_dt f dt
+
+and g_rmap_brs (#lb: eqtype) (f: nat -> region_ref -> region_ref) (bs: list (lb & dtree))
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_brs #lb f d bs)}
+                     globals_brs (rmap_brs #lb f d bs) == globals_brs bs)
+          (decreases bs) =
+  match bs with
+  | [] -> ()
+  | (_, dt) :: bs' -> g_rmap_dt f dt; g_rmap_brs f bs'
+
+and g_rmap_kbrs (f: nat -> region_ref -> region_ref) (bs: list (key & dtree))
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_kbrs f d bs)}
+                     globals_brs (rmap_kbrs f d bs) == globals_brs bs)
+          (decreases bs) =
+  match bs with
+  | [] -> ()
+  | (_, dt) :: bs' -> g_rmap_dt f dt; g_rmap_kbrs f bs'
+
+and g_rmap_cls (f: nat -> region_ref -> region_ref) (cs: list clause)
+  : Lemma (ensures forall (d: nat). {:pattern (rmap_cls f d cs)}
+                     globals_cls (rmap_cls f d cs) == globals_cls cs)
+          (decreases cs) =
+  match cs with
+  | [] -> ()
+  | CFull _ _ _ _ b :: cs' -> g_rmap f b; g_rmap_cls f cs'
+  | CFast _ _ _ b :: cs' -> g_rmap f b; g_rmap_cls f cs'
+
 let covers_kinst ks e = g_kinst e
 let covers_sub_ty_exp sigma e = g_sub_ty e
 let covers_ren_ty_exp xi e = g_ren_ty e
 let covers_ren_tm xi e = g_ren_tm e
 let covers_ren_jp xi e = g_ren_jp e
+let covers_open_region a e = g_rmap (open_rr a) e
 
 (* * Term substitution *)
 

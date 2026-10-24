@@ -1,11 +1,13 @@
 (* Proof structure.
 
-   By induction on the step, which uses no rule of regions and cells
-   (`stage6_step`). A step under a frame is split at the hole
+   By induction on the step. A step under a frame is split at the hole
    (`plug1_typing`), the induction types the hole's reduct at the hole's
-   own `Δ` and row, and the frame is filled back, the cursor of a chain
-   being kept by the step (`step_plug1_cursor_kept`). A value has no step,
-   so the hole is no value, which `plug1_typing` asks.
+   own `Δ` and row under `Γ_R2`, and the frame is filled back in the closed
+   context of `Γ_R2`, which extends that of `Γ_R` in place
+   (`closed_ctx_weaker`), the cursor of a chain being kept by the step
+   (`step_plug1_cursor_kept`). A value has no step, so the hole is no
+   value, which `plug1_typing` asks. Every rule but the opening of a region
+   keeps `Γ_R` (`keep`).
 
    A head rule is handled by one helper per rule (`pres_*`). Each strips
    the conversions at the bottom of the redex's derivation (`strip_conv`),
@@ -55,6 +57,20 @@
    reads the disjointness of the rest through `entails_constr_eq` and
    `entails_disj_ext`.
 
+   Regions and cells (`pres_open`, `pres_exit`, `pres_read`,
+   `pres_write`): the opening's name is fresh for `Γ_R` by `rdom_in`, and
+   for the body, the layout and the initial values by the rule
+   (`open_fresh`); the closed context with the region entered is that of
+   `Γ_R2` (`enter_closed`). The body is the premise of `T_Region` at the
+   name, the cells are the initial values retyped at `()`
+   (`init_cells_typing`) and weakened past the region, and the answer type
+   and the outer row are weakened from `Γ_R` to `Γ_R2` and do not mention
+   the name (`check_closed_lc`). A read or a write splits the frame's body
+   at the hole of the `Ev_ℓ` (`plug_typing`), which is no chain, so any
+   term typed as the hole is put back; the layout `T_ReadCell` or
+   `T_WriteCell` reads for the name is the frame's, both being the one of
+   `Γ_R`.
+
    `sig_ok` is hidden behind `sok` (`Stella.Core.Safety.Hidden`), and
    every lemma that asks for it is called through a wrapper that reveals
    it (`*_h`, those shared with the other safety proofs in
@@ -95,6 +111,10 @@ open Stella.Core.Typing.Ctor
 open Stella.Core.Typing.Plug
 open Stella.Core.Typing.Subst.Tys
 open Stella.Core.Typing.Eff
+open Stella.Core.Typing.Region
+open Stella.Core.Typing.Weaken
+open Stella.Core.Typing.Aux.Lemmas
+open Stella.Core.Region
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
 open Stella.Core.Semantics.Step
@@ -107,6 +127,13 @@ module TV = Stella.Core.Typing.Values
 module VF = Stella.Core.Typing.ValueForm
 module RF = Stella.Core.Typing.Rename.Facts
 module ID = FStar.IndefiniteDescription
+
+(* * The run-time contexts *)
+
+let rdom_in_nil rs =
+  match rs with
+  | [] -> ()
+  | (a, _) :: _ -> assert (L.mem a (L.map fst rs))
 
 (* * Wrappers of the lemmas that ask `sig_ok`, used here alone *)
 
@@ -1230,6 +1257,227 @@ let pres_eff (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#d:
     retm (pres_fast #sg #ln #g #d #fs #k #op #ss #v #hd #lbl #q #ts #ei #os #nb #s #body
             (retm h (EHandle (plug fs (EPerform k op ss v)) hd))) e'
 
+(* * Regions and cells *)
+
+(* Wrappers of the lemmas that ask for `sig_ok`. *)
+
+let values_typing_h (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#r: typ) (#es: list exp)
+  (#ts: list typ) (h: exps_typing sg ln g d r es ts) (d': jctx) (r': typ)
+  : Pure (exps_typing sg ln g d' r' es ts)
+         (requires sok sg /\ wf_ctx sg g /\ L.for_all (V.is_value sg) es /\
+                   check sg g r' (KRow EEffect))
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  TV.values_typing h d' r'
+
+let unit_typing_h (sg: sig) (ln: lctx) (g: ctx) (d: jctx) (r: typ)
+  : Pure (typing sg ln g d unit_exp t_unit r)
+         (requires sok sg /\ check sg g r (KRow EEffect))
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  unit_typing sg ln g d r
+
+(* A cell operation is no value and no chain. *)
+let cell_ops (sg: sig) (a: atom) (k: key) (v: exp)
+  : Lemma (not (V.is_value sg (EReadCell (RFree a) k)) /\
+           None? (decompose_global_app (EReadCell (RFree a) k)) /\
+           not (V.is_value sg (EWriteCell (RFree a) k v)) /\
+           None? (decompose_global_app (EWriteCell (RFree a) k v))) =
+  assert_norm (not (V.is_value sg (EReadCell (RFree a) k)));
+  assert_norm (not (V.is_value sg (EWriteCell (RFree a) k v)))
+
+let row_empty_ok (sg: sig) (g: ctx) : Lemma (check sg g TRowEmpty (KRow EEffect)) = ()
+
+let mem_append (a: atom) (l1 l2: list atom)
+  : Lemma (L.mem a (l1 @ l2) <==> (L.mem a l1 \/ L.mem a l2)) =
+  FStar.List.Tot.Properties.append_mem l1 l2 a
+
+let rec assoc_mem (a: atom) (rs: list (atom & layout))
+  : Lemma (requires Some? (L.assoc a rs)) (ensures L.mem a (L.map fst rs)) (decreases rs) =
+  match rs with
+  | (b, _) :: rs' -> if a = b then () else assoc_mem a rs'
+
+let rec mem_assoc (a: atom) (rs: list (atom & layout))
+  : Lemma (requires L.mem a (L.map fst rs)) (ensures Some? (L.assoc a rs)) (decreases rs) =
+  match rs with
+  | (b, _) :: rs' -> if a = b then () else mem_assoc a rs'
+
+(* The closed context of `Γ_R2` extends that of `Γ_R` in place. *)
+let closed_ctx_weaker (rs rs': list (atom & layout))
+  : Lemma (requires layouts_ext (closed_ctx rs) (closed_ctx rs'))
+          (ensures ctx_weaker (closed_ctx rs) (closed_ctx rs')) =
+  introduce forall (a: atom). L.mem a (rdom (closed_ctx rs)) ==> L.mem a (rdom (closed_ctx rs'))
+  with introduce _ ==> _
+  with begin
+    mem_assoc a rs;
+    assert (Some? (L.assoc a (closed_ctx rs).regions));
+    assoc_mem a rs'
+  end
+
+(* A region with a fresh name keeps every layout of `Γ_R`. *)
+let layouts_ext_extend (rs: list (atom & layout)) (a: atom) (lay: layout)
+  : Lemma (requires ~(L.mem a (L.map fst rs)))
+          (ensures layouts_ext (closed_ctx rs) (closed_ctx ((a, lay) :: rs))) =
+  introduce forall (b: atom).
+    (match L.assoc b (closed_ctx rs).regions with
+     | Some l -> L.assoc b (closed_ctx ((a, lay) :: rs)).regions == Some l
+     | None -> True)
+  with (match L.assoc b rs with
+        | Some _ -> assoc_mem b rs
+        | None -> ())
+
+(* `T_RegionOpen` of the opened region: the name is fresh for the body,
+   and for the closed types of `Γ_R`. *)
+let open_fresh (sg: sig) (rs: list (atom & layout)) (a: atom) (lay: layout) (vs: list exp)
+  (body: exp) (b r: typ)
+  : Lemma (requires ~(L.mem a (L.map fst rs)) /\ ~(L.mem a (frn_exp (ERegion lay vs body))) /\
+                    check sg (closed_ctx rs) b KType /\ check sg (closed_ctx rs) r (KRow EEffect))
+          (ensures ~(L.mem a (frn_exp body)) /\ ~(L.mem a (frn_ty b @ frn_ty r))) =
+  mem_append a (frn_layout lay) (frn_exps vs @ frn_exp body);
+  mem_append a (frn_exps vs) (frn_exp body);
+  check_closed_lc sg rs b KType;
+  check_closed_lc sg rs r (KRow EEffect);
+  mem_append a (frn_ty b) (frn_ty r)
+
+(* The kinding of the closed context of `Γ_R` holds in that of `Γ_R2`. *)
+let closed_ext (rs: list (atom & layout)) (a: atom) (lay: layout)
+  : Lemma (ctx_ext (closed_ctx rs) (closed_ctx ((a, lay) :: rs))) =
+  ctx_ext_enter_region (closed_ctx rs) a lay;
+  enter_closed rs a lay
+
+(* `region [ℓ] lay @ (v̄) in e  →  region⟨a⟩ (k̄ ↦ v̄) in e[ℓ := a]` *)
+let pres_open (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#ra: list atom)
+  (#d: jctx) (#lay: layout) (#vs: list exp) (#body: exp) (#a: atom) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d (ERegion lay vs body) t r)
+  : Pure (preserved sg gi ln rs (a :: ra) d
+            (ERegionOpen a (init_cells (L.map fst lay) vs) (open_region a body)) t r)
+         (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                   rdom_in rs ra /\ L.for_all (V.is_value sg) vs /\
+                   ~(L.mem a ra) /\ ~(L.mem a (frn_exp (ERegion lay vs body))))
+         (ensures fun _ -> True) =
+  let g = closed_ctx rs in
+  let rs' = (a, lay) :: rs in
+  let g' = closed_ctx rs' in
+  rctx_ok_wf_ctx sg rs;
+  reg h;
+  let ri = inv_region h in
+  open_fresh sg rs a lay vs body ri.rg_b ri.rg_r;
+  enter_closed rs a lay;
+  (* the body *)
+  let hb : typing sg ln g' [] (open_region a body) ri.rg_b (TRowExt (EntRegion (RFree a)) ri.rg_r) =
+    ri.rg_body a in
+  (* the cells *)
+  row_empty_ok sg g;
+  let hvs = values_typing_h ri.rg_init [] TRowEmpty in
+  let hc : cells_typing sg ln g' (init_cells (L.map fst lay) vs) lay =
+    cells_typing_weaken_region (init_cells_typing lay hvs) a lay in
+  (* the closed types *)
+  closed_ext rs a lay;
+  check_weaken sg g g' ri.rg_b KType;
+  check_weaken sg g g' ri.rg_r (KRow EEffect);
+  check_weaken sg g g' t KType;
+  check_weaken sg g g' r (KRow EEffect);
+  let ho : typing sg ln g' d (ERegionOpen a (init_cells (L.map fst lay) vs) (open_region a body))
+             ri.rg_b ri.rg_r =
+    T_RegionOpen #sg #ln #g' #d #a #(init_cells (L.map fst lay) vs) #(open_region a body) #lay
+      () () () hc hb in
+  (* `Γ_R2` *)
+  rctx_ok_extend_row sg rs a lay;
+  lctx_ok_mono sg rs rs' ln;
+  layouts_ext_extend rs a lay;
+  genv_ok_ext sg ln rs gi ln rs';
+  { rs' = rs'; ok = (); der = conv ho t r }
+
+(* `region⟨a⟩ θ in v  →  v` *)
+let pres_exit (#sg: sig) (#ln: lctx) (#rs: list (atom & layout)) (#d: jctx) (#a: atom)
+  (#th: list (key & exp)) (#v: exp) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d (ERegionOpen a th v) t r)
+  : Pure (typing sg ln (closed_ctx rs) d v t r)
+         (requires sok sg /\ wf_ctx sg (closed_ctx rs) /\ V.is_value sg v)
+         (ensures fun _ -> True) =
+  reg h;
+  let ro = inv_region_open h in
+  conv (vt ro.ro_body d ro.ro_r) t r
+
+(* `region⟨a⟩ θ in Ev_ℓ[readCell a.k]  →  region⟨a⟩ θ in Ev_ℓ[θ(k)]` *)
+let pres_read (#sg: sig) (#ln: lctx) (#rs: list (atom & layout)) (#d: jctx) (#a: atom)
+  (#th: list (key & exp)) (#fs: list frame) (#k: key) (#v: exp) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d (ERegionOpen a th (plug fs (EReadCell (RFree a) k))) t r)
+  : Pure (typing sg ln (closed_ctx rs) d (ERegionOpen a th (plug fs v)) t r)
+         (requires sok sg /\ wf_ctx sg (closed_ctx rs) /\ L.assoc k th == Some v)
+         (ensures fun _ -> True) =
+  let g = closed_ctx rs in
+  let c = EReadCell (RFree a) k in
+  reg h;
+  let ro = inv_region_open h in
+  cell_ops sg a k v;
+  let pi = plug_typing_h #sg #ln #g #[] #fs #c #ro.ro_b #(TRowExt (EntRegion (RFree a)) ro.ro_r)
+             ro.ro_body in
+  let rd = inv_read_cell #sg #ln #g #pi.p_d #a #k pi.p_hole in
+  let (| t0, hv |) = cells_typing_assoc ro.ro_cells k v in
+  reg pi.p_hole;
+  let hv = conv (vt hv pi.p_d pi.p_r) pi.p_t pi.p_r in
+  let hb = pi.p_fill v hv in
+  conv (region_open_typing ro d th (plug fs v) ro.ro_cells hb) t r
+
+(* `region⟨a⟩ θ in Ev_ℓ[writeCell a.k v]  →  region⟨a⟩ θ[k ↦ v] in Ev_ℓ[Prim.Unit]` *)
+let pres_write (#sg: sig) (#ln: lctx) (#rs: list (atom & layout)) (#d: jctx) (#a: atom)
+  (#th: list (key & exp)) (#fs: list frame) (#k: key) (#v: exp) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d (ERegionOpen a th (plug fs (EWriteCell (RFree a) k v))) t r)
+  : Pure (typing sg ln (closed_ctx rs) d (ERegionOpen a (cells_update th k v) (plug fs unit_exp)) t r)
+         (requires sok sg /\ wf_ctx sg (closed_ctx rs) /\ V.is_value sg v)
+         (ensures fun _ -> True) =
+  let g = closed_ctx rs in
+  let c = EWriteCell (RFree a) k v in
+  reg h;
+  let ro = inv_region_open h in
+  cell_ops sg a k v;
+  let pi = plug_typing_h #sg #ln #g #[] #fs #c #ro.ro_b #(TRowExt (EntRegion (RFree a)) ro.ro_r)
+             ro.ro_body in
+  let wr = inv_write_cell #sg #ln #g #pi.p_d #a #k #v pi.p_hole in
+  row_empty_ok sg g;
+  let hv = vt wr.wr_arg [] TRowEmpty in
+  let hc = cells_typing_update ro.ro_cells k v wr.wr_t hv in
+  reg pi.p_hole;
+  let hu = conv (unit_typing_h sg ln g pi.p_d pi.p_r) pi.p_t pi.p_r in
+  let hb = pi.p_fill unit_exp hu in
+  conv (region_open_typing ro d (cells_update th k v) (plug fs unit_exp) hc hb) t r
+
+(* The reduct typed under `Γ_R` itself. *)
+let keep (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#ra': list atom)
+  (#d: jctx) (#e': exp) (#t #r: typ) (h: typing sg ln (closed_ctx rs) d e' t r)
+  : Pure (preserved sg gi ln rs ra' d e' t r)
+         (requires rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\ rdom_in rs ra')
+         (ensures fun _ -> True) =
+  layouts_ext_refl (closed_ctx rs);
+  { rs' = rs; ok = (); der = h }
+
+(* A conclusion read at a term equal to its own. *)
+let repres (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#ra': list atom)
+  (#d: jctx) (#e1: exp) (#t #r: typ) (p: preserved sg gi ln rs ra' d e1 t r) (e2: exp)
+  : Pure (preserved sg gi ln rs ra' d e2 t r) (requires e1 == e2) (ensures fun _ -> True) =
+  p
+
+let pres_region (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#ra: list atom)
+  (#e: exp) (#ra': list atom) (#e': exp) (#d: jctx) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d e t r) (rh: region_head sg gi ra e ra' (CTerm e'))
+  : Pure (preserved sg gi ln rs ra' d e' t r)
+         (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                   rdom_in rs ra)
+         (ensures fun _ -> True) =
+  rctx_ok_wf_ctx sg rs;
+  match rh with
+  | RH_Open #_ #_ #_ #lay #vs #body #a _ _ ->
+    repres (pres_open #sg #gi #ln #rs #ra #d #lay #vs #body #a (retm h (ERegion lay vs body))) e'
+  | RH_Exit #_ #_ #_ #a #th #v _ ->
+    keep (retm (pres_exit #sg #ln #rs #d #a #th #v (retm h (ERegionOpen a th v))) e')
+  | RH_Read #_ #_ #_ #a #th #fs #k #v _ _ ->
+    keep (retm (pres_read #sg #ln #rs #d #a #th #fs #k #v
+                  (retm h (ERegionOpen a th (plug fs (EReadCell (RFree a) k))))) e')
+  | RH_Write #_ #_ #_ #a #th #fs #k #v _ _ ->
+    keep (retm (pres_write #sg #ln #rs #d #a #th #fs #k #v
+                  (retm h (ERegionOpen a th (plug fs (EWriteCell (RFree a) k v))))) e')
+
 (* * Steps *)
 
 let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
@@ -1237,17 +1485,17 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#d: jctx) (#t #r: typ)
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
-  : Ghost (typing sg ln (closed_ctx rs) d e' t r)
+  : Ghost (preserved sg gi ln rs ra' d e' t r)
           (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    stage6_step s)
+                    rdom_in rs ra)
           (ensures fun _ -> True)
           (decreases s) =
   match s with
   | S_Pure #_ #_ #_ #_ #e0 #c ph ->
-    pres_head #sg #gi #ln #rs #d #e #e' #t #r h ph
+    keep (pres_head #sg #gi #ln #rs #d #e #e' #t #r h ph)
   | S_Eff #_ #_ #_ #_ #e0 #c eh ->
-    pres_eff #sg #gi #ln #rs #d #e #e' #t #r h eh
-  | S_Region _ -> false_elim ()
+    keep (pres_eff #sg #gi #ln #rs #d #e #e' #t #r h eh)
+  | S_Region rh -> pres_region h rh
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
     if V.is_value sg e1 then begin
@@ -1255,9 +1503,10 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
       false_elim ()
     end else begin
       let pi = plug1_typing_h #sg #ln #(closed_ctx rs) #d #f #e1 #t #r (retm h (plug1 f e1)) in
-      let h1 = pres_step pi.hole s1 in
+      let p1 = pres_step pi.hole s1 in
+      closed_ctx_weaker rs p1.rs';
       step_plug1_cursor_kept f s1;
-      pi.fill e1' h1
+      { rs' = p1.rs'; ok = (); der = pi.fill (closed_ctx p1.rs') e1' p1.der }
     end
 
 (* * The theorems *)
@@ -1269,5 +1518,9 @@ let preservation #sg #gi #ln #rs #ra #st #e #ra' #st' #e' #d #t #r h s =
 let preservation_typed #sg #gi ln rs #ra #st #e #ra' #st' #e' t s =
   let h = ID.indefinite_description_ghost
             (typing sg ln (closed_ctx rs) [] e t TRowEmpty) (fun _ -> True) in
-  let h' = preservation h s in
-  FStar.Classical.exists_intro (fun (_: typing sg ln (closed_ctx rs) [] e' t TRowEmpty) -> True) h'
+  let p = preservation h s in
+  FStar.Classical.exists_intro
+    (fun (_: typing sg ln (closed_ctx p.rs') [] e' t TRowEmpty) -> True) p.der;
+  FStar.Classical.exists_intro
+    (fun (rs': list (atom & layout)) ->
+       rctx_after sg gi ln rs ra' rs' /\ typed sg ln (closed_ctx rs') e' t) p.rs'

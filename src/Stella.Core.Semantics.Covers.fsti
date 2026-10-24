@@ -7,10 +7,11 @@
  * operations on terms that the reduction rules use keep or bound the
  * global names of a term (`Stella.Core.Semantics.Env.globals`):
  *
- *   - kind instantiation, type substitution and type renaming, and the
- *     renamings of term variables and of join points, keep `globals`
- *     exactly: they rewrite kinds, type annotations, variable indices
- *     and join indices, none of which is a global name;
+ *   - kind instantiation, type substitution and type renaming, the
+ *     renamings of term variables and of join points, and the opening of
+ *     a region keep `globals` exactly: they rewrite kinds, type
+ *     annotations, variable indices, join indices and region references,
+ *     none of which is a global name;
  *   - a term substitution places its substitutes at the variables it
  *     replaces, so a covered term with covered substitutes gives a covered
  *     result (`covers_sub_tm`);
@@ -27,6 +28,7 @@
 module Stella.Core.Semantics.Covers
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Region
 open Stella.Core.Sig
 open Stella.Core.Typing.Aux
 open Stella.Core.Semantics.Env
@@ -71,6 +73,10 @@ val covers_ren_tm (xi: ren) (e: exp)
 (** A renaming of join points rewrites join indices only. *)
 val covers_ren_jp (xi: ren) (e: exp)
   : Lemma (globals (ren_jp xi e) == globals e)
+
+(** Opening a region rewrites region references only. *)
+val covers_open_region (a: atom) (e: exp)
+  : Lemma (globals (open_region a e) == globals e)
 
 (** * Term substitution *)
 

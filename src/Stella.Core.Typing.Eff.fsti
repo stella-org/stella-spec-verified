@@ -13,7 +13,11 @@
  * The cursor reads the spine of the chain but not its value arguments, so
  * `plug_typing` puts back any term with the same spine as the hole
  * (`spine_like`), such as a variable in place of a `perform`, since
- * neither is a chain.
+ * neither is a chain. In place of a hole that is no chain it puts back any
+ * term, such as a cell's value in place of a `readCell`. A frame that is
+ * no value argument of a chain builds no chain around such a hole, so
+ * there is no cursor to keep. A value argument is a position the cursor
+ * does not read, so the chain around it keeps its spine.
  *
  * The hole's row is related to the row of `Ev[e]` frame by frame
  * (`Stella.Core.Typing.hole_row`). Through an `Ev_k` (`ev_k k fs`)
@@ -110,12 +114,14 @@ let eff_entries_in (k: key) (hr r: typ) : prop =
 val hole_row_eff (f: frame) (k: key) (r hr: typ)
   : Lemma (requires hole_row f r hr /\ not_handle_of k f) (ensures eff_entries_in k hr r)
 
-(** Putting a term with the hole's spine, typed as the hole, back into
-    `fs`. *)
+(** Putting a term typed as the hole back into `fs`, when it has the
+    hole's spine or the hole is no chain. *)
 let plug_fill (sg: sig) (ln: lctx) (g: ctx) (d: jctx) (fs: list frame) (e: exp) (t r: typ)
   (hd: jctx) (ht hr: typ) : Type =
   e': exp -> typing sg ln g hd e' ht hr ->
-  Pure (typing sg ln g d (plug fs e') t r) (requires spine_like e e') (ensures fun _ -> True)
+  Pure (typing sg ln g d (plug fs e') t r)
+       (requires spine_like e e' \/ None? (decompose_global_app e))
+       (ensures fun _ -> True)
 
 (** A derivation of `Ev[e]` split at the hole: the hole's derivation under
     `p_d`, at `p_t` and `p_r`, the effect entries of every key `k` the

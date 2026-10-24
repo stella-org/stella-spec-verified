@@ -12,6 +12,12 @@
  * open region and `fill`, whose rules type the hole at a row of their own
  * (`hole_row`).
  *
+ * The term put back may be typed in a context that extends the context of
+ * `f[e]` in place (`Stella.Core.Typing.Weaken.ctx_weaker`), as the reduct
+ * of a hole that opens a region is typed with the region added to `Γ_R`:
+ * the other premises of the frame's rule are weakened to that context,
+ * and `f[e']` is typed there.
+ *
  * ## Chains
  *
  * When `e` is no value, the rule of the frame's form is the only rule
@@ -65,6 +71,7 @@ open Stella.Core.Kinding
 open Stella.Core.Spine
 open Stella.Core.Typing.Aux
 open Stella.Core.Typing
+open Stella.Core.Typing.Weaken
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
 open Stella.Core.Semantics.Step
@@ -135,12 +142,15 @@ let hole_row (f: frame) (r hr: typ) : prop =
   | _ -> ty_eq hr r
 
 (** Putting a term typed as the hole back into `f`, at the judgement of
-    `f[e]`, when it keeps the cursor of `f[e]`. *)
+    `f[e]`, when it keeps the cursor of `f[e]`. The term may be typed in
+    any context `g'` that extends `g` in place (`ctx_weaker`), such as
+    `Γ_R` with a region added: the frame's other premises are weakened to
+    `g'`, and the frame is rebuilt there. *)
 let plug1_fill (sg: sig) (ln: lctx) (g: ctx) (d: jctx) (f: frame) (e: exp) (t r: typ)
   (hd: jctx) (ht hr: typ) : Type =
-  e': exp -> typing sg ln g hd e' ht hr ->
-  Pure (typing sg ln g d (plug1 f e') t r)
-       (requires cursor_kept sg (plug1 f e) (plug1 f e'))
+  g': ctx -> e': exp -> typing sg ln g' hd e' ht hr ->
+  Pure (typing sg ln g' d (plug1 f e') t r)
+       (requires ctx_weaker g g' /\ cursor_kept sg (plug1 f e) (plug1 f e'))
        (ensures fun _ -> True)
 
 (** A derivation of `f[e]` at `Γ; Δ ⊢ f[e] : τ ! ρ`, split at the hole:

@@ -317,15 +317,3 @@ let rec term_names (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp
   | S_Ctx _ _ h' -> term_names h'
 
 let step_term_names #sg #gi #ra #st #e #ra' #st' #e' h = term_names h
-
-let rec frag_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
-  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
-  : Lemma (requires stage6_frag e) (ensures stage6_step s) (decreases s) =
-  match s with
-  | S_Pure _ -> ()
-  | S_Eff _ -> ()
-  | S_Region rh -> stage6_no_region rh
-  | S_Ctx #_ #_ #_ #_ #x #_ #_ #_ f _ s' -> stage6_frag_plug1 f x; frag_step s'
-  | S_CtxFault #_ #_ #_ #_ #x #_ #_ #_ f _ s' -> stage6_frag_plug1 f x; frag_step s'
-
-let stage6_frag_step #sg #gi #ra #st #e #ra' #st' #c s = frag_step s

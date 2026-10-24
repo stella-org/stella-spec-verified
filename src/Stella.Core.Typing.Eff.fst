@@ -12,9 +12,13 @@
    `plug (f :: fs) e = plug fs (plug1 f e)`: the outer frames `fs` are
    split first, around `plug1 f e`, which is no value
    (`Stella.Core.Semantics.Ctx.plug1_not_value`), and their hole is split
-   at `f` by `plug1_typing`. Putting back goes the other way, each frame
-   keeping the spine. The effect entries of key `k` go from the hole of `f`
-   to the hole of `fs` (`hole_row_eff`), then out to the whole term.
+   at `f` by `plug1_typing`. Putting back goes the other way. Around a
+   term with the hole's spine each frame keeps the spine. Around a hole
+   that is no chain a frame builds a value argument, whose replacement
+   keeps the spine (`spine_like_app_arg`), or no chain at all
+   (`plug1_prefix_nonchain`), which has no cursor (`fill_like_plug1`).
+   The effect entries of key `k` go from the hole of `f` to the hole of
+   `fs` (`hole_row_eff`), then out to the whole term.
 
    Rows: an entry of an extension is the element added or one of the row
    extended, and an entry of a part of a union is one of the union
@@ -107,6 +111,23 @@ let spine_like_plug1 f a b =
      | _ -> ())
   | _ -> plug1_nonchain f a; plug1_nonchain f b
 
+(* A value argument is no position of the spine. *)
+let spine_like_app_arg (fn a b: exp) : Lemma (spine_like (EApp fn a) (EApp fn b)) =
+  match decompose_global_app fn with
+  | Some (_, _, args) ->
+    LP.map_append arg_shape args [SVal a];
+    LP.map_append arg_shape args [SVal b]
+  | None -> ()
+
+(* A frame that is no value argument builds no chain around a hole that is
+   none. *)
+let plug1_prefix_nonchain (f: frame) (a: exp)
+  : Lemma (requires ~(FAppArg? f) /\ None? (decompose_global_app a))
+          (ensures decompose_global_app (plug1 f a) == None) =
+  match f with
+  | FAppFun _ | FTyApp _ | FCApp -> ()
+  | _ -> plug1_nonchain f a
+
 let rec cursor_shape (sg: sig) (t: typ) (th: tsub) (args: list spine_arg)
   : Lemma (ensures cursor sg t th args == cursor sg t th (L.map arg_shape args)) (decreases args) =
   match args with
@@ -126,6 +147,22 @@ let spine_like_cursor sg a b =
        cursor_shape sg (kinst_ty ks t) tvar args'
      | None -> ())
   | _ -> ()
+
+(* What `plug_fill` asks of the hole holds of the term a frame builds
+   around it, and the frame keeps its cursor. *)
+let fill_like_plug1 (sg: sig) (f: frame) (a b: exp)
+  : Lemma (requires spine_like a b \/ None? (decompose_global_app a))
+          (ensures cursor_kept sg (plug1 f a) (plug1 f b) /\
+                   (spine_like (plug1 f a) (plug1 f b) \/
+                    None? (decompose_global_app (plug1 f a)))) =
+  match f with
+  | FAppArg fn -> spine_like_app_arg fn a b; chain_cursor_replace_val sg fn a b
+  | _ ->
+    if None? (decompose_global_app a) then plug1_prefix_nonchain f a
+    else begin
+      spine_like_plug1 f a b;
+      spine_like_cursor sg (plug1 f a) (plug1 f b)
+    end
 
 (* * Rows *)
 
@@ -161,7 +198,8 @@ let rec plug_go (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#
   match fs with
   | [] ->
     let fill (e': exp) (h': typing sg ln g d e' t r)
-      : Pure (typing sg ln g d (plug fs e') t r) (requires spine_like e e') (ensures fun _ -> True) =
+      : Pure (typing sg ln g d (plug fs e') t r)
+             (requires spine_like e e' \/ None? (decompose_global_app e)) (ensures fun _ -> True) =
       h'
     in
     { p_d = d; p_t = t; p_r = r; p_hole = h; p_rows = (); p_fill = fill }
@@ -177,10 +215,11 @@ let rec plug_go (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#
       hole_row_eff f k pi.p_r p1.hr
     end;
     let fill (e': exp) (h': typing sg ln g p1.hd e' p1.ht p1.hr)
-      : Pure (typing sg ln g d (plug fs e') t r) (requires spine_like e e') (ensures fun _ -> True) =
-      spine_like_plug1 f e e';
-      spine_like_cursor sg (plug1 f e) (plug1 f e');
-      let h1 = p1.fill e' h' in
+      : Pure (typing sg ln g d (plug fs e') t r)
+             (requires spine_like e e' \/ None? (decompose_global_app e)) (ensures fun _ -> True) =
+      fill_like_plug1 sg f e e';
+      ctx_weaker_refl g;
+      let h1 = p1.fill g e' h' in
       pi.p_fill (plug1 f e') h1
     in
     { p_d = p1.hd; p_t = p1.ht; p_r = p1.hr; p_hole = p1.hole; p_rows = (); p_fill = fill }

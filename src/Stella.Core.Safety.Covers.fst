@@ -20,6 +20,10 @@
    reinstalled handler is the redex's `handle` renamed, which keeps its
    names, with a variable in the hole (`cov_resume`).
 
+   The rules of regions and cells (`cov_region`) read no derivation
+   either: the cells are covered one by one (`cells_*_all`), and the hole
+   of the `Ev_ℓ` is replaced by a covered term (`covers_plug_replace`).
+
    `sig_ok` is hidden behind `sok`, and the two lemmas that ask for it
    are called through the wrappers that reveal it (`*_h`), all from
    `Stella.Core.Safety.Hidden`, so its quantifiers do not enter the
@@ -27,6 +31,7 @@
 module Stella.Core.Safety.Covers
 open Stella.Core.Syntax
 open Stella.Core.Subst
+open Stella.Core.Region
 open Stella.Core.Sig
 open Stella.Core.Sig.Wf
 open Stella.Core.Context
@@ -225,6 +230,49 @@ let cov_eff (#sg: sig) (#gi: genv) (#e #e': exp) (eh: eff_head sg gi e (CTerm e'
     cov_resume sg gi fs p hd;
     covers_subst1_tm sg gi v (sub_ty_exp (binders_tsub ss) body)
 
+(* * Regions and cells *)
+
+let rec cells_init_all (p: exp -> bool) (ks: list key) (vs: list exp)
+  : Lemma (requires exp_all_exps p vs) (ensures exp_all_cells p (init_cells ks vs)) (decreases ks) =
+  match ks, vs with
+  | _ :: ks', _ :: vs' -> cells_init_all p ks' vs'
+  | _ -> ()
+
+let rec cells_assoc_all (p: exp -> bool) (th: list (key & exp)) (k: key) (v: exp)
+  : Lemma (requires exp_all_cells p th /\ L.assoc k th == Some v) (ensures exp_all p v)
+          (decreases th) =
+  match th with
+  | (k', _) :: th' -> if k' = k then () else cells_assoc_all p th' k v
+
+let rec cells_update_all (p: exp -> bool) (th: list (key & exp)) (k: key) (v: exp)
+  : Lemma (requires exp_all_cells p th /\ exp_all p v) (ensures exp_all_cells p (cells_update th k v))
+          (decreases th) =
+  match th with
+  | [] -> ()
+  | (k', _) :: th' -> if k' = k then () else cells_update_all p th' k v
+
+(* `Prim.Unit` is a constructor, which needs no entry. *)
+let unit_covered (sg: sig) (gi: genv) : Lemma (requires sok sg) (ensures covers sg gi unit_exp) =
+  sok_elim sg
+
+let cov_region (#sg: sig) (#gi: genv) (#ra: list atom) (#e: exp) (#ra': list atom) (#e': exp)
+  (rh: region_head sg gi ra e ra' (CTerm e'))
+  : Lemma (requires sok sg /\ covers sg gi e) (ensures covers sg gi e') =
+  match rh with
+  | RH_Open #_ #_ #_ #lay #vs #body #a _ _ ->
+    cells_init_all (covered sg gi) (L.map fst lay) vs;
+    covers_open_region a body;
+    covers_globals_eq sg gi (open_region a body) body
+  | RH_Exit _ -> ()
+  | RH_Read #_ #_ #_ #a #th #fs #k #v _ _ ->
+    cells_assoc_all (covered sg gi) th k v;
+    covers_plug_replace sg gi fs (EReadCell (RFree a) k) v
+  | RH_Write #_ #_ #_ #a #th #fs #k #v _ _ ->
+    covers_plug sg gi fs (EWriteCell (RFree a) k v);
+    cells_update_all (covered sg gi) th k v;
+    unit_covered sg gi;
+    covers_plug_replace sg gi fs (EWriteCell (RFree a) k v) unit_exp
+
 (* * Steps *)
 
 let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
@@ -233,13 +281,13 @@ let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    stage6_step s /\ covers sg gi e)
+                    covers sg gi e)
           (ensures covers sg gi e')
           (decreases s) =
   match s with
   | S_Pure ph -> cov_head #sg #gi #ln #rs #d #e #e' #t #r h ph
   | S_Eff eh -> cov_eff eh
-  | S_Region _ -> ()
+  | S_Region rh -> cov_region rh
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
     if V.is_value sg e1 then value_no_step s1

@@ -20,6 +20,7 @@ open Stella.Core.Context
 open Stella.Core.Kinding
 open Stella.Core.Kinding.Subst
 open Stella.Core.Typing.Aux
+open Stella.Core.Typing.Aux.Lemmas
 open Stella.Core.Typing
 open Stella.Core.Typing.Rename.Ty
 open Stella.Core.Typing.Rename.Tm
@@ -226,6 +227,101 @@ let dt_typing_weaken_region #sg #ln #g #d #om #dt #t #r h a l =
   region_weaker g a l;
   ren_tm_dt_id dt;
   dt_typing_ren_tm h id_ren ({ g with regions = (a, l) :: g.regions })
+
+(* `ctx_weaker g g'` is `tm_ren_ok id_ren g g'`. *)
+
+let ctx_weaker_refl g =
+  ctx_ext_refl g;
+  layouts_ext_refl g
+
+let ctx_weaker_push_var g g' t =
+  tm_ren_ok_id g g';
+  tm_ren_ok_up id_ren g g' t;
+  tm_ren_ok_ext (up_ren id_ren) id_ren (push_var g t) (push_var g' t)
+
+let rec ctx_weaker_push_vars g g' ts
+  : Lemma (requires ctx_weaker g g') (ensures ctx_weaker (push_vars g ts) (push_vars g' ts))
+          (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: ts' ->
+    ctx_weaker_push_var g g' t;
+    ctx_weaker_push_vars (push_var g t) (push_var g' t) ts'
+
+let ctx_weaker_enter_region g g' a l =
+  tm_ren_ok_id g g';
+  tm_ren_ok_enter_region id_ren g g' a l
+
+let rec check_tys_weaker (sg: sig) (g g': ctx) (ts: list typ) (ks: list kind)
+  : Lemma (requires ctx_ext g g' /\ check_tys sg g ts ks) (ensures check_tys sg g' ts ks)
+          (decreases ts) =
+  match ts, ks with
+  | [], [] -> ()
+  | t :: ts, k :: ks -> check_weaken sg g g' t k; check_tys_weaker sg g g' ts ks
+
+let rec tys_ok_weaker (sg: sig) (g g': ctx) (ts: list typ)
+  : Lemma (requires ctx_ext g g' /\ tys_ok sg g ts) (ensures tys_ok sg g' ts) (decreases ts) =
+  match ts with
+  | [] -> ()
+  | t :: ts -> check_weaken sg g g' t KType; tys_ok_weaker sg g g' ts
+
+let ctx_weaker_facts sg g g' =
+  introduce forall (t: typ) (k: kind). check sg g t k ==> check sg g' t k
+  with introduce _ ==> _
+  with check_weaken sg g g' t k;
+  introduce forall (ts: list typ) (ks: list kind). check_tys sg g ts ks ==> check_tys sg g' ts ks
+  with introduce _ ==> _
+  with check_tys_weaker sg g g' ts ks;
+  introduce forall (ts: list typ). tys_ok sg g ts ==> tys_ok sg g' ts
+  with introduce _ ==> _
+  with tys_ok_weaker sg g g' ts;
+  introduce forall (c: constr). entails (hyps g) c ==> entails (hyps g') c
+  with introduce _ ==> _
+  with entails_cut_all (hyps g) (hyps g') c;
+  introduce forall (t: typ) (k: kind).
+    check sg (closed_ctx g.regions) t k ==> check sg (closed_ctx g'.regions) t k
+  with introduce _ ==> _
+  with begin
+    introduce forall (a: atom). L.mem a (L.map fst g.regions) ==> L.mem a (L.map fst g'.regions)
+    with introduce _ ==> _
+    with assert (L.mem a (rdom g));
+    check_closed_mono sg g.regions g'.regions t k
+  end
+
+let exps_typing_weaken_ext #sg #ln #g #d #r #es #ts h g' =
+  tm_ren_ok_id g g';
+  ren_tm_exps_id es;
+  exps_typing_ren_tm h id_ren g'
+
+let chain_typing_weaken_ext #sg #ln #g #d #r #e h g' =
+  tm_ren_ok_id g g';
+  ren_tm_id e;
+  chain_typing_ren_tm h id_ren g'
+
+let cells_typing_weaken_ext #sg #ln #g #cells #lay h g' =
+  tm_ren_ok_id g g';
+  ren_tm_cells_id cells;
+  cells_typing_ren_tm h id_ren g'
+
+let match_typing_weaken_ext #sg #ln #g #d #r #th #om h g' =
+  tm_ren_ok_id g g';
+  ren_tm_exps_id th;
+  match_typing_ren_tm h id_ren g'
+
+let dt_typing_weaken_ext #sg #ln #g #d #om #dt #t #r h g' =
+  tm_ren_ok_id g g';
+  ren_tm_dt_id dt;
+  dt_typing_ren_tm h id_ren g'
+
+(* The clauses are those of a handler of a `handle` with no free variable. *)
+let ren_tm_cls_id (cs: list clause) : Lemma (ren_tm_cls id_ren cs == cs) =
+  let h = { h_ent = EntRegion (RFree 0); h_ret_ty = TRowEmpty; h_ret = ERecEmpty; h_clauses = cs } in
+  ren_tm_id (EHandle ERecEmpty h)
+
+let clauses_typing_weaken_ext #sg #ln #g #ei #ts #r #b #cs h g' =
+  tm_ren_ok_id g g';
+  ren_tm_cls_id cs;
+  clauses_typing_ren_tm h id_ren g'
 
 (* The location context. *)
 

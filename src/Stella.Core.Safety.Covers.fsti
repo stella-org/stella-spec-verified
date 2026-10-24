@@ -4,9 +4,7 @@
  *
  * `G covers e` (`Stella.Core.Semantics.Env.covers`) is what Progress needs
  * of the term, and Preservation carries it: when `G ⊢ N; e → N'; e'`
- * steps to a term and `G` covers `e`, `G` covers `e'`, for the steps that
- * use no rule of regions and cells
- * (`Stella.Core.Semantics.Step.stage6_step`). This is a theorem
+ * steps to a term and `G` covers `e`, `G` covers `e'`. This is a theorem
  * of its own, with coverage as an extra premise:
  * `Stella.Core.Safety.Preservation` keeps typing whether or not the term
  * is covered (spec 06 §Properties).
@@ -27,10 +25,17 @@
  *     handlers builds its reduct from the handled computation, the
  *     `perform`'s argument, the handler and one of its clauses, each
  *     covered when the redex is, and the continuation and the reinstalled
- *     `handle` hold the context renamed, with a variable in its hole.
+ *     `handle` hold the context renamed, with a variable in its hole. The
+ *     opening of a region makes its initial values the cells and opens
+ *     its body, which keeps its global names
+ *     (`Stella.Core.Semantics.Covers.covers_open_region`). A read moves a
+ *     cell into the hole, and a write moves the value written into the
+ *     cells and `Prim.Unit`, a constructor, into the hole. A value leaving
+ *     its frame is the frame's body.
  *
- * The hypotheses are those of `Stella.Core.Safety.Preservation.preservation`,
- * plus the coverage of the term.
+ * The hypotheses are those of `Stella.Core.Safety.Preservation.preservation`
+ * but `rdom_in`, which coverage does not need, plus the coverage of the
+ * term.
  *)
 module Stella.Core.Safety.Covers
 open Stella.Core.Syntax
@@ -43,13 +48,13 @@ open Stella.Core.Typing.Runtime
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Step
 
-(** A step to a term that uses no rule of regions and cells keeps the
-    coverage of a closed run-time term typed under conforming contexts. *)
+(** A step to a term keeps the coverage of a closed run-time term typed
+    under conforming contexts. *)
 val preservation_covers (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (#d: jctx) (#t #r: typ)
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    stage6_step s /\ covers sg gi e)
+                    covers sg gi e)
           (ensures covers sg gi e')
