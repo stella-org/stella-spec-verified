@@ -9,7 +9,8 @@
  *     effect Poly { poly : forall (b : Type). b ->* b }
  *
  * beside `Console { log : String ->* Unit }`. The environment is
- * `ex_genv`; no rule here reads it.
+ * `ex_genv`; no rule here reads it. `eff_sig` satisfies `sig_ok`
+ * (`eff_sig_ok`).
  *
  * Every handler of `Console` here except `h_z` (below) has the return
  * clause `return (x : Unit) -> idu x`, with `idu = λ (u : Unit) / (). u`,
@@ -62,6 +63,7 @@ module Stella.Core.Semantics.Examples.Eff
 open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
+open Stella.Core.Sig.Wf
 open Stella.Core.Prim
 open Stella.Core.Spine
 open Stella.Core.Sig.Examples
@@ -85,6 +87,9 @@ let eff_effects (q: qname) : option effect_info =
   if q = poly_q then Some poly_info else good_effects q
 
 let eff_sig : sig = { ex_sig with effects = eff_effects }
+
+(** `eff_sig` is well formed. *)
+val eff_sig_ok : unit -> Lemma (sig_ok eff_sig)
 
 (** * Terms *)
 

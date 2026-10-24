@@ -37,6 +37,8 @@ Proven so far:
 - The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
 - Type safety of the pure rules: a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
 
+Under review: the reduction rules of effect handlers (return, `full`, and `fast` clauses, deep and multi-shot), and the preservation of typing and of coverage across every step, the handler steps included.
+
 Planned:
 
 - Preservation and progress extended to effects, regions and cells, and `letrec` with its store, and chained into type safety for whole runs.

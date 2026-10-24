@@ -4,9 +4,7 @@
    (`plug1_typing`), the induction types the hole's reduct at the hole's
    own `Δ` and row, and the frame is filled back, the cursor of a chain
    being kept by the step (`step_plug1_cursor_kept`). A value has no step,
-   so the hole is no value, which `plug1_typing` asks. The hole of a term
-   of the stage-5 fragment is one (`stage5_frag_plug1`), and no effect
-   rule applies to such a term (`stage5_no_eff`).
+   so the hole is no value, which `plug1_typing` asks.
 
    A head rule is handled by one helper per rule (`pres_*`). Each strips
    the conversions at the bottom of the redex's derivation (`strip_conv`),
@@ -25,6 +23,23 @@
    `carrier_key` and its payload from `variant_payload_typing`, and a
    literal branch needs no value at all. The `switchKey` default retypes
    `θ(o)` at the residual (`key_default_typing`).
+
+   Operations and handlers (`pres_return`, `pres_full`, `pres_fast`):
+   `handle` is inverted (`inv_handle`), its handled computation split at
+   the hole of `Ev_k` (`plug_typing`), and the `perform` there inverted
+   (`inv_perform`); its element is the handler's, up to type equality of
+   the arguments (`handled_entry`), so its argument has the instance the
+   clause reads, `σ[ā := τ̄][b̄ := σ̄]` (`op_redex_inv`). The clause the rule
+   selects is typed by the premises of `TCL_Full` or `TCL_Fast`
+   (`full_clause_typing`, `fast_clause_typing`); its body is instantiated
+   at `σ̄` (`typing_subst_tys_vars`), the answer type and the row coming
+   back from their shift (`sub_tys_shift`). The continuation's type
+   `κ[b̄ := σ̄]` is the function type `as_function` reads it as, so its
+   parts are equal to the instances `TCL_Full` writes (`ty_eq_fun_ty`).
+   The reinstalled `handle Ev_k[y] with h` is `resume_typing`. The
+   substitution of the term binders is `typing_subst_values` for the
+   two binders of `full` and `typing_subst1_value` for the one of
+   `fast`.
 
    Join: the jump's join point is the head of the `letjoin`'s `Δ`
    (`nth_append` at `n = |Tl|`), so its signature is the `letjoin`'s
@@ -57,6 +72,7 @@ open Stella.Core.Sig
 open Stella.Core.Sig.Wf
 open Stella.Core.Context
 open Stella.Core.Kinding
+open Stella.Core.Kinding.Subst
 open Stella.Core.Kinding.Sharp
 open Stella.Core.Prim
 open Stella.Core.Spine
@@ -76,6 +92,8 @@ open Stella.Core.Typing.Subst.Tm.Inst
 open Stella.Core.Typing.Occ
 open Stella.Core.Typing.Ctor
 open Stella.Core.Typing.Plug
+open Stella.Core.Typing.Subst.Tys
+open Stella.Core.Typing.Eff
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
 open Stella.Core.Semantics.Step
@@ -948,6 +966,269 @@ let pres_head (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#d
   | PH_JoinValue #_ #_ #ts #t1 #e1 #v _ ->
     pres_join_value #sg #ln #g #d #ts #t1 #e1 #v (retm h (ELetJoin ts t1 e1 v))
 
+(* * Operations and handlers *)
+
+(* Wrappers of the lemmas of `Stella.Core.Typing.Eff` and
+   `Stella.Core.Typing.Subst.Tys` that ask `sig_ok`. *)
+
+let plug_typing_h (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#e: exp)
+  (#t #r: typ) (h: typing sg ln g d (plug fs e) t r)
+  : Pure (plug_inv sg ln g d fs e t r)
+         (requires sok sg /\ wf_ctx sg g /\ not (V.is_value sg e))
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  plug_typing h
+
+let resume_typing_h (#sg: sig) (#ln: lctx) (#g: ctx) (#fs: list frame) (#k: key) (#op: opname)
+  (#ss: list typ) (#v: exp) (#hd: handler) (#b #r0: typ)
+  (h: typing sg ln g [] (EHandle (plug fs (EPerform k op ss v)) hd) b r0)
+  (lbl: option string) (q: qname) (ts: list typ) (ei: effect_info) (os: op_sig)
+  (tp: typ) (d0: jctx) (b' r': typ)
+  : Pure (typing sg ln (push_var g tp) d0 (resume fs hd) b' r')
+         (requires sok sg /\ wf_ctx sg g /\ not (inconsistent (hyps g)) /\ ev_k k fs /\
+                   hd.h_ent == EntEff lbl q ts /\ handler_key hd == k /\
+                   sg.effects q == Some ei /\ op_of ei op == Some os /\
+                   check sg g tp KType /\ ty_eq tp (op_inst ts ss os.res) /\
+                   ty_eq b' b /\ ty_eq r' r0 /\
+                   check sg g b' KType /\ check sg g r' (KRow EEffect))
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  resume_typing h lbl q ts ei os tp d0 b' r'
+
+let typing_subst_tys_vars_h (#sg: sig) (#ln: lctx) (#g: ctx) (#ks: list kind) (#ts: list typ)
+  (#d: jctx) (#e: exp) (#t #r: typ) (h: typing sg ln (push_vars (push_tvars g ks) ts) d e t r)
+  (ss: list typ)
+  : Pure (typing sg ln (push_vars g (sub_tys (list_tsub (L.rev ss)) ts))
+            (sub_jctx (list_tsub (L.rev ss)) d) (sub_ty_exp (list_tsub (L.rev ss)) e)
+            (sub_ty (list_tsub (L.rev ss)) t) (sub_ty (list_tsub (L.rev ss)) r))
+         (requires sok sg /\ wf_ctx sg g /\ check_tys sg g ss ks)
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  typing_subst_tys_vars h ss
+
+let typing_subst1_value_h (#sg: sig) (#ln: lctx) (#g: ctx) (#t1: typ) (#d: jctx)
+  (#e: exp) (#t #r: typ) (h: typing sg ln (push_var g t1) d e t r)
+  (#d0: jctx) (#v: exp) (#r0: typ) (hv: typing sg ln g d0 v t1 r0)
+  : Pure (typing sg ln g d (subst1_tm v e) t r)
+         (requires sok sg /\ wf_ctx sg g /\ V.is_value sg v)
+         (ensures fun _ -> True) =
+  sok_elim sg;
+  typing_subst1_value h hv
+
+(* A type `as_function` reads as `τ1 -{ρ}-> τ2` is that function type, and
+   is kinded when its parts are. *)
+let fun_parts (sg: sig) (g: ctx) (t t1 r t2: typ)
+  : Lemma (requires sok sg /\ as_function sg t == Some (t1, r, t2) /\ check sg g t KType)
+          (ensures t == t_fun t1 r t2 /\ check sg g t1 KType /\ check sg g r (KRow EEffect) /\
+                   check sg g t2 KType) =
+  sok_elim sg;
+  Stella.Core.Spine.Wf.as_function_t_fun sg t t1 r t2;
+  Stella.Core.Spine.Wf.check_as_function sg g t t1 r t2
+
+(* A derivation read at equal indices. *)
+let recast (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#e: exp) (#t #r: typ)
+  (h: typing sg ln g d e t r) (g': ctx) (d': jctx) (e': exp) (t' r': typ)
+  : Pure (typing sg ln g' d' e' t' r')
+         (requires g == g' /\ d == d' /\ e == e' /\ t == t' /\ r == r')
+         (ensures fun _ -> True) =
+  h
+
+let perform_not_value (sg: sig) (k: key) (op: opname) (ss: list typ) (v: exp)
+  : Lemma (not (V.is_value sg (EPerform k op ss v))) =
+  assert_norm (not (V.is_value sg (EPerform k op ss v)))
+
+let lam_value (sg: sig) (t1 r1: typ) (b v: exp)
+  : Lemma (requires V.is_value sg v) (ensures L.for_all (V.is_value sg) [v; ELam t1 r1 b]) =
+  assert_norm (V.is_value sg (ELam t1 r1 b))
+
+let sub_t_fun (sigma: tsub) (a r b: typ)
+  : Lemma (sub_ty sigma (t_fun a r b) == t_fun (sub_ty sigma a) (sub_ty sigma r) (sub_ty sigma b)) =
+  assert_norm (sub_ty sigma (t_fun a r b) == t_fun (sub_ty sigma a) (sub_ty sigma r) (sub_ty sigma b))
+
+let sub_tys_pair (sigma: tsub) (a b: typ)
+  : Lemma (sub_tys sigma [a; b] == [sub_ty sigma a; sub_ty sigma b] /\
+           sub_tys sigma [a] == [sub_ty sigma a]) =
+  assert_norm (sub_tys sigma [a; b] == [sub_ty sigma a; sub_ty sigma b]);
+  assert_norm (sub_tys sigma [a] == [sub_ty sigma a])
+
+let rev_pair (#a: Type) (x y: a) : Lemma (L.rev [x; y] == [y; x]) =
+  assert_norm (L.rev [x; y] == [y; x])
+
+(* `handle v with h  →  e_r[x := v]` *)
+let pres_return (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#v: exp) (#hd: handler)
+  (#t #r: typ) (h: typing sg ln g d (EHandle v hd) t r)
+  : Pure (typing sg ln g d (subst1_tm v hd.h_ret) t r)
+         (requires sok sg /\ wf_ctx sg g /\ V.is_value sg v)
+         (ensures fun _ -> True) =
+  reg h;
+  let hi = inv_handle h in
+  let hv = vt hi.hi_body [] hi.hi_r in
+  let hs = typing_subst1_value_h hi.hi_ret hv in
+  conv (typing_jp_nil hs d) t r
+
+(* The `perform` of a redex of `full` or `fast`, inverted in the hole of
+   the `Ev_k`: its argument at the instance of the operation's argument
+   type, at the handler's arguments `τ̄`, and at the row `ρ` of the
+   `handle`. *)
+noeq type op_redex (sg: sig) (ln: lctx) (g: ctx) (fs: list frame) (k: key) (op: opname)
+  (ss: list typ) (v: exp) (hd: handler) (t r: typ) (ts: list typ) (os: op_sig) = {
+  or_h: handle_inv sg ln g (plug fs (EPerform k op ss v)) hd t r;
+  or_at: typ;
+  or_arg: typing sg ln g [] v or_at or_h.hi_r;
+  or_facts: squash (check_tys sg g ss os.binders /\ ty_eq or_at (op_inst ts ss os.arg));
+}
+
+let op_redex_inv (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#k: key)
+  (#op: opname) (#ss: list typ) (#v: exp) (#hd: handler) (#t #r: typ)
+  (h: typing sg ln g d (EHandle (plug fs (EPerform k op ss v)) hd) t r)
+  (lbl: option string) (q: qname) (ts: list typ) (ei: effect_info) (os: op_sig)
+  : Pure (op_redex sg ln g fs k op ss v hd t r ts os)
+         (requires sok sg /\ wf_ctx sg g /\ not (inconsistent (hyps g)) /\
+                   ev_k k fs /\ V.is_value sg v /\
+                   hd.h_ent == EntEff lbl q ts /\ handler_key hd == k /\
+                   sg.effects q == Some ei /\ op_of ei op == Some os)
+         (ensures fun o -> o.or_h.hi_q == q /\ o.or_h.hi_ts == ts /\ o.or_h.hi_ei == ei)
+  =
+  let p = EPerform k op ss v in
+  let hi = inv_handle h in
+  perform_not_value sg k op ss v;
+  let pi = plug_typing_h #sg #ln #g #[] #fs #p #hd.h_ret_ty #(TRowExt hd.h_ent hi.hi_r)
+             hi.hi_body in
+  let pf = inv_perform #sg #ln #g #pi.p_d #k #op #ss #v #pi.p_t #pi.p_r pi.p_hole in
+  assert (eff_entries_in k pi.p_r (TRowExt hd.h_ent hi.hi_r));
+  handled_entry sg g hd.h_ent hi.hi_r pi.p_r k lbl q pf.pf_q ts pf.pf_ts;
+  Stella.Core.Typing.Subst.Tys.op_inst_canon ts pf.pf_ts ss os.arg;
+  let ha = vt pf.pf_arg [] hi.hi_r in
+  { or_h = hi; or_at = op_inst pf.pf_ts ss os.arg; or_arg = ha; or_facts = () }
+
+(* `handle Ev_k[perform k.op [σ̄] v] with h
+     →  e_i[b̄ := σ̄, x := v, k := λ(y : τ') / ρ. handle Ev_k[y] with h]` *)
+let pres_full (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#k: key)
+  (#op: opname) (#ss: list typ) (#v: exp) (#hd: handler) (#lbl: option string) (#q: qname)
+  (#ts: list typ) (#ei: effect_info) (#os: op_sig) (#nb: nat) (#s #kt: typ) (#body: exp)
+  (#tp #rho #bt: typ) (#t #r: typ)
+  (h: typing sg ln g d (EHandle (plug fs (EPerform k op ss v)) hd) t r)
+  : Pure (typing sg ln g d (full_reduct ss v tp rho fs hd body) t r)
+         (requires sok sg /\ wf_ctx sg g /\ not (inconsistent (hyps g)) /\
+                   ev_k k fs /\ V.is_value sg v /\
+                   hd.h_ent == EntEff lbl q ts /\ handler_key hd == k /\
+                   sg.effects q == Some ei /\ op_of ei op == Some os /\
+                   clause_of op hd.h_clauses == Some (CFull op nb s kt body) /\
+                   L.length ss == nb /\ nb == L.length os.binders /\
+                   as_function sg (sub_ty (binders_tsub ss) kt) == Some (tp, rho, bt))
+         (ensures fun _ -> True) =
+  reg h;
+  let o = op_redex_inv h lbl q ts ei os in
+  let hi = o.or_h in
+  let r0 = hi.hi_r in
+  let b = hi.hi_b in
+  let fc = full_clause_typing hi.hi_cls op nb s kt body in
+  let sigma = list_tsub (L.rev ss) in
+  let s' = sub_ty sigma s in
+  let kt' = sub_ty sigma kt in
+  ty_sub_ok_tys sg g ss os.binders;
+  check_sub sg sigma (push_tvars g os.binders) g s KType;
+  check_sub sg sigma (push_tvars g os.binders) g kt KType;
+  (* the argument *)
+  ty_eq_sub sigma s (eff_inst nb ts os.arg);
+  sub_tys_eff_inst ss ts nb os.arg;
+  let hv = conv o.or_arg s' r0 in
+  (* the continuation *)
+  fun_parts sg g kt' tp rho bt;
+  ty_eq_sub sigma kt (t_fun (eff_inst nb ts os.res) (ren_ty (shift nb) r0) (ren_ty (shift nb) b));
+  sub_t_fun sigma (eff_inst nb ts os.res) (ren_ty (shift nb) r0) (ren_ty (shift nb) b);
+  sub_tys_eff_inst ss ts nb os.res;
+  sub_tys_shift ss nb r0;
+  sub_tys_shift ss nb b;
+  ty_eq_fun_ty prim_function prim_function tp rho bt (op_inst ts ss os.res) r0 b;
+  let p = EPerform k op ss v in
+  let hh = handle_typing hi [] (plug fs p) hi.hi_body in
+  let hres = resume_typing_h #sg #ln #g #fs #k #op #ss #v #hd #b #r0 hh lbl q ts ei os tp [] bt rho in
+  let hk : typing sg ln g [] (continuation tp rho fs hd) (t_fun tp rho bt) r0 = T_Lam () () hres in
+  let hk = recast hk g [] (continuation tp rho fs hd) kt' r0 in
+  (* the body *)
+  let hb0 : typing sg ln (push_vars (push_tvars g os.binders) [s; kt]) [] body
+              (ren_ty (shift nb) b) (ren_ty (shift nb) r0) = fc.fc_body in
+  let hb = typing_subst_tys_vars_h hb0 ss in
+  let body' = sub_ty_exp sigma body in
+  sub_tys_pair sigma s kt;
+  let hb = recast hb (push_vars g [s'; kt']) [] body' b r0 in
+  let kv = continuation tp rho fs hd in
+  let hes : exps_typing sg ln g [] r0 [v; kv] [s'; kt'] = TE_Cons hv (TE_Cons hk (TE_Nil ())) in
+  lam_value sg tp rho (resume fs hd) v;
+  let hs = typing_subst_values_h hb hes in
+  rev_pair v kv;
+  let hs = recast hs g [] (full_reduct ss v tp rho fs hd body) b r0 in
+  conv (typing_jp_nil hs d) t r
+
+(* `handle Ev_k[perform k.op [σ̄] v] with h
+     →  let y : τ' = e_i[b̄ := σ̄, x := v] in (handle Ev_k[y] with h)` *)
+let pres_fast (#sg: sig) (#ln: lctx) (#g: ctx) (#d: jctx) (#fs: list frame) (#k: key)
+  (#op: opname) (#ss: list typ) (#v: exp) (#hd: handler) (#lbl: option string) (#q: qname)
+  (#ts: list typ) (#ei: effect_info) (#os: op_sig) (#nb: nat) (#s: typ) (#body: exp)
+  (#t #r: typ)
+  (h: typing sg ln g d (EHandle (plug fs (EPerform k op ss v)) hd) t r)
+  : Pure (typing sg ln g d (fast_reduct ts ss os v fs hd body) t r)
+         (requires sok sg /\ wf_ctx sg g /\ not (inconsistent (hyps g)) /\
+                   ev_k k fs /\ V.is_value sg v /\
+                   hd.h_ent == EntEff lbl q ts /\ handler_key hd == k /\
+                   sg.effects q == Some ei /\ op_of ei op == Some os /\
+                   clause_of op hd.h_clauses == Some (CFast op nb s body) /\
+                   L.length ss == nb /\ nb == L.length os.binders)
+         (ensures fun _ -> True) =
+  reg h;
+  let o = op_redex_inv h lbl q ts ei os in
+  let hi = o.or_h in
+  let r0 = hi.hi_r in
+  let b = hi.hi_b in
+  let sc = fast_clause_typing hi.hi_cls op nb s body in
+  let sigma = list_tsub (L.rev ss) in
+  let s' = sub_ty sigma s in
+  let tp = op_inst ts ss os.res in
+  ty_sub_ok_tys sg g ss os.binders;
+  check_sub sg sigma (push_tvars g os.binders) g s KType;
+  (* the argument *)
+  ty_eq_sub sigma s (eff_inst nb ts os.arg);
+  sub_tys_eff_inst ss ts nb os.arg;
+  let hv = conv o.or_arg s' r0 in
+  (* the body *)
+  let hb0 : typing sg ln (push_vars (push_tvars g os.binders) [s]) [] body
+              (eff_inst nb ts os.res) (ren_ty (shift nb) r0) = sc.sc_body in
+  let hb = typing_subst_tys_vars_h hb0 ss in
+  sub_tys_eff_inst ss ts nb os.res;
+  sub_tys_shift ss nb r0;
+  let body' = sub_ty_exp sigma body in
+  sub_tys_pair sigma s s;
+  let hb = recast hb (push_var g s') [] body' tp r0 in
+  let hs = typing_subst1_value_h hb hv in
+  reg hs;
+  (* the resumption *)
+  let p = EPerform k op ss v in
+  let hh = handle_typing hi [] (plug fs p) hi.hi_body in
+  let hres = resume_typing_h #sg #ln #g #fs #k #op #ss #v #hd #b #r0 hh lbl q ts ei os tp d b r0 in
+  let hl : typing sg ln g d (ELet tp (subst1_tm v body') (resume fs hd)) b r0 = T_Let () hs hres in
+  conv (recast hl g d (fast_reduct ts ss os v fs hd body) b r0) t r
+
+let pres_eff (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#d: jctx)
+  (#e #e': exp) (#t #r: typ)
+  (h: typing sg ln (closed_ctx rs) d e t r) (eh: eff_head sg gi e (CTerm e'))
+  : Pure (typing sg ln (closed_ctx rs) d e' t r)
+         (requires sok sg /\ rctx_ok sg rs)
+         (ensures fun _ -> True) =
+  let g = closed_ctx rs in
+  rctx_ok_wf_ctx sg rs;
+  closed_ctx_consistent rs;
+  match eh with
+  | EH_Return #_ #_ #v #hd _ ->
+    retm (pres_return #sg #ln #g #d #v #hd (retm h (EHandle v hd))) e'
+  | EH_Full #_ #_ #fs #k #op #ss #v #hd #lbl #q #ts #ei #os #nb #s #kt #body #tp #rho #bt
+      _ _ _ _ _ ->
+    retm (pres_full #sg #ln #g #d #fs #k #op #ss #v #hd #lbl #q #ts #ei #os #nb #s #kt #body
+            #tp #rho #bt (retm h (EHandle (plug fs (EPerform k op ss v)) hd))) e'
+  | EH_Fast #_ #_ #fs #k #op #ss #v #hd #lbl #q #ts #ei #os #nb #s #body _ _ _ _ ->
+    retm (pres_fast #sg #ln #g #d #fs #k #op #ss #v #hd #lbl #q #ts #ei #os #nb #s #body
+            (retm h (EHandle (plug fs (EPerform k op ss v)) hd))) e'
+
 (* * Steps *)
 
 let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
@@ -956,17 +1237,16 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Ghost (typing sg ln (closed_ctx rs) d e' t r)
-          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    stage5_frag e)
+          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
           (ensures fun _ -> True)
           (decreases s) =
   match s with
   | S_Pure #_ #_ #_ #_ #e0 #c ph ->
     pres_head #sg #gi #ln #rs #d #e #e' #t #r h ph
-  | S_Eff eh -> stage5_no_eff eh; false_elim ()
+  | S_Eff #_ #_ #_ #_ #e0 #c eh ->
+    pres_eff #sg #gi #ln #rs #d #e #e' #t #r h eh
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
-    stage5_frag_plug1 f e1;
     if V.is_value sg e1 then begin
       value_no_step s1;
       false_elim ()

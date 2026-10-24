@@ -5,9 +5,7 @@
    its reduct, and the frame is filled back (`covers_plug1_replace`). The
    foreign rule reads the derivation of its redex, so the hole's
    derivation is taken from `plug1_typing`; a value has no step, so the
-   hole is no value, which `plug1_typing` asks. The hole of a term of the
-   stage-5 fragment is one (`stage5_frag_plug1`), and no effect rule
-   applies to such a term (`stage5_no_eff`).
+   hole is no value, which `plug1_typing` asks.
 
    A head rule is handled by one helper per family of rules (`cov_*`), on
    the syntax alone except for the two rules that read `G`. The foreign
@@ -15,6 +13,12 @@
    which is what condition (3) asks to give the adapter's outcome
    (`genv_ok_foreign`); the outcome is the step's, the adapter being a
    function.
+
+   The rules of operations and handlers (`cov_eff`) read no derivation:
+   the clause `clause_of` selects is one of the handler's (`cov_clause`),
+   instantiating its type binders keeps its names (`cov_inst`), and the
+   reinstalled handler is the redex's `handle` renamed, which keeps its
+   names, with a variable in the hole (`cov_resume`).
 
    `sig_ok` is hidden behind `sok`, and the two lemmas that ask for it
    are called through the wrappers that reveal it (`*_h`), all from
@@ -34,6 +38,7 @@ open Stella.Core.Typing.Runtime
 open Stella.Core.Typing.Plug
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
+open Stella.Core.Semantics.Ctx.Ren
 open Stella.Core.Semantics.Step
 open Stella.Core.Semantics.Covers
 open Stella.Core.Safety.Hidden
@@ -163,6 +168,63 @@ let cov_head (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#d:
     cov_foreign #sg #gi #ln #rs #d #e #t #r q ks args fe e' h
   | _ -> cov_syntactic ph
 
+(* * Operations and handlers *)
+
+let rec cov_clause (sg: sig) (gi: genv) (op: opname) (cs: list clause) (c: clause)
+  : Lemma (requires exp_all_cls (covered sg gi) cs /\ clause_of op cs == Some c)
+          (ensures (match c with
+                    | CFull _ _ _ _ b -> covers sg gi b
+                    | CFast _ _ _ b -> covers sg gi b))
+          (decreases cs) =
+  match cs with
+  | c' :: cs' -> if clause_op c' = op then () else cov_clause sg gi op cs' c
+
+(* The body of a clause with its type binders instantiated. *)
+let cov_inst (sg: sig) (gi: genv) (ss: list typ) (body: exp)
+  : Lemma (requires covers sg gi body) (ensures covers sg gi (sub_ty_exp (binders_tsub ss) body)) =
+  covers_sub_ty_exp (binders_tsub ss) body;
+  covers_globals_eq sg gi (sub_ty_exp (binders_tsub ss) body) body
+
+(* `handle Ev_k[y] with h` is covered when `handle Ev_k[e] with h` is. *)
+let cov_resume (sg: sig) (gi: genv) (fs: list frame) (e: exp) (hd: handler)
+  : Lemma (requires covers sg gi (EHandle (plug fs e) hd)) (ensures covers sg gi (resume fs hd)) =
+  let fs1 = ren_frames (shift 1) fs in
+  let hd1 = ren_handler (shift 1) hd in
+  let e1 = ren_tm (shift 1) e in
+  covers_ren_tm (shift 1) (EHandle (plug fs e) hd);
+  covers_globals_eq sg gi (ren_tm (shift 1) (EHandle (plug fs e) hd)) (EHandle (plug fs e) hd);
+  ren_tm_handle (shift 1) (plug fs e) hd;
+  ren_tm_plug (shift 1) fs e;
+  assert (covers sg gi (plug1 (FHandle hd1) (plug fs1 e1)));
+  covers_plug_replace sg gi fs1 e1 (EVar 0);
+  covers_plug1_replace sg gi (FHandle hd1) (plug fs1 e1) (plug fs1 (EVar 0))
+
+let for_all_pair (p: exp -> bool) (a b: exp)
+  : Lemma (requires p a /\ p b) (ensures L.for_all p [a; b]) =
+  assert_norm (L.for_all p [a; b] == (p a && p b))
+
+let cov_eff (#sg: sig) (#gi: genv) (#e #e': exp) (eh: eff_head sg gi e (CTerm e'))
+  : Lemma (requires covers sg gi e) (ensures covers sg gi e') =
+  match eh with
+  | EH_Return #_ #_ #v #hd _ -> covers_subst1_tm sg gi v hd.h_ret
+  | EH_Full #_ #_ #fs #k #op #ss #v #hd #_ #_ #_ #_ #_ #nb #s #kt #body #tp #rho _ _ _ _ _ ->
+    let p = EPerform k op ss v in
+    covers_plug sg gi fs p;
+    cov_clause sg gi op hd.h_clauses (CFull op nb s kt body);
+    cov_inst sg gi ss body;
+    cov_resume sg gi fs p hd;
+    let kv = continuation tp rho fs hd in
+    assert (covers sg gi kv);
+    for_all_pair (covers sg gi) kv v;
+    covers_list_esub sg gi [kv; v] (sub_ty_exp (binders_tsub ss) body)
+  | EH_Fast #_ #_ #fs #k #op #ss #v #hd #_ #_ #ts #_ #os #nb #s #body _ _ _ _ ->
+    let p = EPerform k op ss v in
+    covers_plug sg gi fs p;
+    cov_clause sg gi op hd.h_clauses (CFast op nb s body);
+    cov_inst sg gi ss body;
+    cov_resume sg gi fs p hd;
+    covers_subst1_tm sg gi v (sub_ty_exp (binders_tsub ss) body)
+
 (* * Steps *)
 
 let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
@@ -171,15 +233,14 @@ let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    stage5_frag e /\ covers sg gi e)
+                    covers sg gi e)
           (ensures covers sg gi e')
           (decreases s) =
   match s with
   | S_Pure ph -> cov_head #sg #gi #ln #rs #d #e #e' #t #r h ph
-  | S_Eff eh -> stage5_no_eff eh
+  | S_Eff eh -> cov_eff eh
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
-    stage5_frag_plug1 f e1;
     if V.is_value sg e1 then value_no_step s1
     else begin
       let pi = plug1_typing_h #sg #ln #(closed_ctx rs) #d #f #e1 #t #r (retm h (plug1 f e1)) in

@@ -1,4 +1,8 @@
-(* Each step is built from its rule. The premises are closed facts about
+(* `sig_ok eff_sig` is checked one table at a time, as `sig_ok ex_sig` is
+   (`Stella.Core.Semantics.Examples`), each closed fact by normalization;
+   the table of effects has `Poly` beside `Console`.
+
+   Each step is built from its rule. The premises are closed facts about
    `eff_sig`, the handler and the term, and the reduct the rule computes
    (substitution, renaming and plugging) equals the term written in the
    interface; both hold by normalization. *)
@@ -6,6 +10,7 @@ module Stella.Core.Semantics.Examples.Eff
 open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
+open Stella.Core.Sig.Wf
 open Stella.Core.Prim
 open Stella.Core.Spine
 open Stella.Core.Sig.Examples
@@ -17,6 +22,100 @@ open Stella.Core.Semantics.Step
 open Stella.Core.Semantics.Examples
 module L = FStar.List.Tot
 module V = Stella.Core.Value
+
+(* * `sig_ok` *)
+
+let eff_tycons_wf () : Lemma (tycons_wf eff_sig) =
+  assert_norm (tycon_ok { tc_nk = 0;
+                          tc_kind = KArrow KType (KArrow (KRow EEffect) (KArrow KType KType));
+                          tc_class = TcIntrinsic ClsFunction });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow (KRow EType) KType;
+                          tc_class = TcIntrinsic ClsRecord });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow (KRow EType) KType;
+                          tc_class = TcIntrinsic ClsVariant });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KType; tc_class = TcIntrinsic ClsLiteral });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KArrow KType KType; tc_class = TcIntrinsic ClsOpaque });
+  assert_norm (tycon_ok { tc_nk = 0; tc_kind = KType; tc_class = TcData [prim_unit_ctor] });
+  assert_norm (tycon_ok list_info);
+  assert_norm (tycon_ok proxy_info);
+  assert_norm (tycon_ok task_info)
+
+let eff_effects_wf () : Lemma (effects_wf eff_sig) =
+  assert_norm (effect_ok eff_sig console_info);
+  assert_norm (effect_ok eff_sig poly_info);
+  assert_norm (poly_q <> base "Console")
+
+let eff_ctors_wf () : Lemma (ctors_wf eff_sig) =
+  assert_norm (scheme_ok eff_sig unit_info.ct_nk unit_info.ct_ty);
+  assert_norm (scheme_ok eff_sig nil_info.ct_nk nil_info.ct_ty);
+  assert_norm (scheme_ok eff_sig cons_info.ct_nk cons_info.ct_ty);
+  assert_norm (scheme_ok eff_sig mkproxy_info.ct_nk mkproxy_info.ct_ty);
+  assert_norm (scheme_ok eff_sig mktask_info.ct_nk mktask_info.ct_ty)
+
+let eff_foreigns_wf () : Lemma (foreigns_wf eff_sig) =
+  assert_norm (scheme_ok eff_sig length_info.fr_nk length_info.fr_ty);
+  assert_norm (scheme_ok eff_sig boom_info.fr_nk boom_info.fr_ty);
+  assert_norm (scheme_ok eff_sig pure_info.fr_nk pure_info.fr_ty);
+  assert_norm (scheme_ok eff_sig mknil_info.fr_nk mknil_info.fr_ty);
+  assert_norm (scheme_ok eff_sig ident_info.fr_nk ident_info.fr_ty);
+  assert_norm (scheme_ok eff_sig leak_info.fr_nk leak_info.fr_ty)
+
+let eff_values_wf () : Lemma (values_wf eff_sig) =
+  assert_norm (scheme_ok eff_sig one_info.vl_nk one_info.vl_ty);
+  assert_norm (scheme_ok eff_sig missing_info.vl_nk missing_info.vl_ty)
+
+let eff_globals_disjoint () : Lemma (globals_disjoint eff_sig) =
+  assert_norm (eff_sig.foreigns prim_unit_ctor == None);
+  assert_norm (eff_sig.foreigns (base "Nil") == None);
+  assert_norm (eff_sig.foreigns (base "Cons") == None);
+  assert_norm (eff_sig.foreigns (base "MkProxy") == None);
+  assert_norm (eff_sig.foreigns (base "MkTask") == None);
+  assert_norm (eff_sig.values prim_unit_ctor == None);
+  assert_norm (eff_sig.values (base "Nil") == None);
+  assert_norm (eff_sig.values (base "Cons") == None);
+  assert_norm (eff_sig.values (base "MkProxy") == None);
+  assert_norm (eff_sig.values (base "MkTask") == None);
+  assert_norm (eff_sig.values (base "length") == None);
+  assert_norm (eff_sig.values (base "boom") == None);
+  assert_norm (eff_sig.values (base "pure") == None);
+  assert_norm (eff_sig.values (base "mkNil") == None);
+  assert_norm (eff_sig.values (base "ident") == None);
+  assert_norm (eff_sig.values (base "leak") == None)
+
+let eff_prim_wf () : Lemma (prim_wf eff_sig) =
+  assert_norm (prim_tycon eff_sig prim_function
+                 (KArrow KType (KArrow (KRow EEffect) (KArrow KType KType))) (TcIntrinsic ClsFunction));
+  assert_norm (prim_tycon eff_sig prim_record (KArrow (KRow EType) KType) (TcIntrinsic ClsRecord));
+  assert_norm (prim_tycon eff_sig prim_variant (KArrow (KRow EType) KType) (TcIntrinsic ClsVariant));
+  assert_norm (prim_tycon eff_sig prim_int KType (TcIntrinsic ClsLiteral));
+  assert_norm (prim_tycon eff_sig prim_number KType (TcIntrinsic ClsLiteral));
+  assert_norm (prim_tycon eff_sig prim_string KType (TcIntrinsic ClsLiteral));
+  assert_norm (prim_tycon eff_sig prim_char KType (TcIntrinsic ClsLiteral));
+  assert_norm (prim_tycon eff_sig prim_boolean KType (TcIntrinsic ClsLiteral));
+  assert_norm (prim_tycon eff_sig prim_io (KArrow KType KType) (TcIntrinsic ClsOpaque));
+  assert_norm (prim_tycon eff_sig prim_unit KType (TcData [prim_unit_ctor]));
+  assert_norm (eff_sig.ctors prim_unit_ctor == Some unit_info)
+
+let eff_globals_ok () : Lemma (globals_ok eff_sig) =
+  assert_norm (ctor_ok eff_sig prim_unit_ctor unit_info);
+  assert_norm (ctor_ok eff_sig (base "Nil") nil_info);
+  assert_norm (ctor_ok eff_sig (base "Cons") cons_info);
+  assert_norm (ctor_ok eff_sig (base "MkProxy") mkproxy_info);
+  assert_norm (ctor_ok eff_sig (base "MkTask") mktask_info);
+  assert_norm (data_ok eff_sig prim_unit [prim_unit_ctor]);
+  assert_norm (data_ok eff_sig (base "List") [base "Nil"; base "Cons"]);
+  assert_norm (data_ok eff_sig (base "Proxy") [base "MkProxy"]);
+  assert_norm (data_ok eff_sig (base "Task") [base "MkTask"]);
+  assert_norm (arrows_pure length_info.fr_ty);
+  assert_norm (arrows_pure boom_info.fr_ty);
+  assert_norm (arrows_pure pure_info.fr_ty);
+  assert_norm (arrows_pure mknil_info.fr_ty);
+  assert_norm (arrows_pure ident_info.fr_ty);
+  assert_norm (arrows_pure leak_info.fr_ty)
+
+let eff_sig_ok () =
+  eff_tycons_wf (); eff_effects_wf (); eff_ctors_wf (); eff_foreigns_wf (); eff_values_wf ();
+  eff_globals_disjoint (); eff_prim_wf (); eff_globals_ok ()
 
 let retype (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#c: config)
   (e2: exp) (c2: config) (h: step eff_sig ex_genv ra st e ra' st' c)
