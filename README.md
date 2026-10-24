@@ -35,10 +35,11 @@ Proven so far:
 - A top-level value, instantiated at any kinds, is typed in every context that keeps the layouts of its regions.
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 - The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
-- Type safety of the pure rules: a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
-- Effect handlers: return, `full`, and `fast` clauses reduce as the specification gives them, deep and multi-shot, and every step, the handler steps included, preserves the exact type, ambient row, and coverage of a closed well-typed term.
+- Effect handlers: return, `full`, and `fast` clauses reduce as the specification gives them, deep and multi-shot.
+- Type safety for the reduction relation so far (the pure and effect rules): a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
+- Effect safety for the same rules: under a conforming global environment, from any closed term typed at the empty row, no sequence of steps reaches a `perform` that no handler of its key encloses.
 
-Under review, for the reduction relation so far (the pure and effect rules): one-step progress extended to effect handlers (a closed well-typed term at the empty row, covered and calling foreigns inside their preconditions, with no region, cell, `letrec`, `force`, or `fill`, is a value or steps); and effect safety: under a conforming global environment, from any closed term typed at the empty row, no sequence of steps reaches a `perform` that no handler of its key encloses. The rules for regions, cells, and `letrec` must re-establish both when they are added.
+The rules for regions, cells, and `letrec` must re-establish type safety and effect safety when they are added.
 
 Planned:
 
