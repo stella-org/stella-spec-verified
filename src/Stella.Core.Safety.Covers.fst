@@ -233,12 +233,13 @@ let rec cov_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    covers sg gi e)
+                    stage6_step s /\ covers sg gi e)
           (ensures covers sg gi e')
           (decreases s) =
   match s with
   | S_Pure ph -> cov_head #sg #gi #ln #rs #d #e #e' #t #r h ph
   | S_Eff eh -> cov_eff eh
+  | S_Region _ -> ()
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
     if V.is_value sg e1 then value_no_step s1

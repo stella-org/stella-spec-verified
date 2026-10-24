@@ -1,6 +1,7 @@
-(* A redex of a pure or effect head rule is no value: its head is an
-   elimination form, a `handle`, a run-time form that is no value, a global with a body, or a
-   saturated foreign chain (`Stella.Core.Value.foreign_redex_not_value`).
+(* A redex of a head rule is no value: its head is an elimination form, a
+   `handle`, a `region`, a run-time form that is no value, a global with a
+   body, or a saturated foreign chain
+   (`Stella.Core.Value.foreign_redex_not_value`).
 
    The context lemmas are inductions on the list of frames. A frame's hole
    is a direct subterm of the plugged term, or an element of one of its
@@ -10,6 +11,8 @@ module Stella.Core.Semantics.Step
 open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
+open Stella.Core.Prim
+open Stella.Core.Region
 open Stella.Core.Spine
 open Stella.Core.Erase
 open Stella.Core.Typing.Aux
@@ -41,6 +44,18 @@ let eff_step_shape #sg #gi #e #c h =
 
 let value_no_eff_head #sg #gi #e #c h = eff_step_shape h
 
+(* A rule of regions and cells rewrites a `region` or an open region
+   frame, neither of which is a value. *)
+
+let region_step_shape #sg #gi #ra #e #ra' #c h =
+  match h with
+  | RH_Open _ _ -> ()
+  | RH_Exit _ -> ()
+  | RH_Read _ _ -> ()
+  | RH_Write _ _ -> ()
+
+let value_no_region_head #sg #gi #ra #e #ra' #c h = region_step_shape h
+
 let rec step_plug #sg #gi #ra #st #e #ra' #st' #e' fs h
   : Pure (step sg gi ra st (plug fs e) ra' st' (CTerm (plug fs e')))
          (requires frames_ok sg fs) (ensures fun _ -> True) (decreases fs) =
@@ -57,87 +72,89 @@ let rec step_plug_fault #sg #gi #ra #st #e #ra' #st' #phi fs h
 
 (* * Fragments
 
-   `stage5_node` implies `stage6_node`, so `exp_all` of the first implies
-   `exp_all` of the second, node by node. *)
+   A node predicate that implies another gives `exp_all` of the second from
+   `exp_all` of the first, node by node. *)
 
-let stage5_node_stage6 (e: exp) : Lemma (requires stage5_node e) (ensures stage6_node e) = ()
-
-let rec s56_exp (e: exp)
-  : Lemma (requires exp_all stage5_node e) (ensures exp_all stage6_node e) (decreases e) =
-  stage5_node_stage6 e;
+let rec all_mono (p q: exp -> bool) (e: exp)
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all p e) (ensures exp_all q e)
+          (decreases e) =
   match e with
   | EVar _ | EGlobal _ _ | ELit _ | ERecEmpty | EReadCell _ _ | EForce _ | EOpaque _ _ -> ()
   | ELam _ _ b | ETyLam _ b | ETyApp b _ | ECLam _ b | ECApp b
   | ESelect _ b | ERestrict _ b | EInject _ _ b | EWeaken _ _ b
   | EAbsurd _ b | EPerform _ _ _ b | EOpenEff _ b | EWriteCell _ _ b
-  | EOpenEffC _ b | EFill _ b -> s56_exp b
+  | EOpenEffC _ b | EFill _ b -> all_mono p q b
   | EApp e1 e2 | ELet _ e1 e2 | ELetJoin _ _ e1 e2
-  | EExtend _ e1 e2 | EUpdate _ e1 e2 | EMerge e1 e2 -> s56_exp e1; s56_exp e2
-  | ELetRec bs b -> s56_binds bs; s56_exp b
-  | ECase es dt -> s56_exps es; s56_dt dt
-  | EMatch th dt -> s56_exps th; s56_dt dt
-  | EJump _ es -> s56_exps es
-  | EHandle b h -> s56_exp b; s56_exp h.h_ret; s56_cls h.h_clauses
-  | ERegion _ es b -> s56_exps es; s56_exp b
-  | ERegionOpen _ th b -> s56_cells th; s56_exp b
+  | EExtend _ e1 e2 | EUpdate _ e1 e2 | EMerge e1 e2 -> all_mono p q e1; all_mono p q e2
+  | ELetRec bs b -> all_mono_binds p q bs; all_mono p q b
+  | ECase es dt -> all_mono_exps p q es; all_mono_dt p q dt
+  | EMatch th dt -> all_mono_exps p q th; all_mono_dt p q dt
+  | EJump _ es -> all_mono_exps p q es
+  | EHandle b h -> all_mono p q b; all_mono p q h.h_ret; all_mono_cls p q h.h_clauses
+  | ERegion _ es b -> all_mono_exps p q es; all_mono p q b
+  | ERegionOpen _ th b -> all_mono_cells p q th; all_mono p q b
 
-and s56_exps (es: list exp)
-  : Lemma (requires exp_all_exps stage5_node es) (ensures exp_all_exps stage6_node es)
-          (decreases es) =
+and all_mono_exps (p q: exp -> bool) (es: list exp)
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_exps p es)
+          (ensures exp_all_exps q es) (decreases es) =
   match es with
   | [] -> ()
-  | e :: es -> s56_exp e; s56_exps es
+  | e :: es -> all_mono p q e; all_mono_exps p q es
 
-and s56_binds (bs: list (typ & exp))
-  : Lemma (requires exp_all_binds stage5_node bs) (ensures exp_all_binds stage6_node bs)
-          (decreases bs) =
+and all_mono_binds (p q: exp -> bool) (bs: list (typ & exp))
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_binds p bs)
+          (ensures exp_all_binds q bs) (decreases bs) =
   match bs with
   | [] -> ()
-  | (_, e) :: bs -> s56_exp e; s56_binds bs
+  | (_, e) :: bs -> all_mono p q e; all_mono_binds p q bs
 
-and s56_cells (th: list (key & exp))
-  : Lemma (requires exp_all_cells stage5_node th) (ensures exp_all_cells stage6_node th)
-          (decreases th) =
+and all_mono_cells (p q: exp -> bool) (th: list (key & exp))
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_cells p th)
+          (ensures exp_all_cells q th) (decreases th) =
   match th with
   | [] -> ()
-  | (_, e) :: th -> s56_exp e; s56_cells th
+  | (_, e) :: th -> all_mono p q e; all_mono_cells p q th
 
-and s56_dt (dt: dtree)
-  : Lemma (requires exp_all_dt stage5_node dt) (ensures exp_all_dt stage6_node dt)
-          (decreases dt) =
+and all_mono_dt (p q: exp -> bool) (dt: dtree)
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_dt p dt)
+          (ensures exp_all_dt q dt) (decreases dt) =
   match dt with
-  | DLeaf e -> s56_exp e
-  | DBind _ dt -> s56_dt dt
-  | DSwitchCtor _ bs df -> s56_brs bs; s56_odt df
-  | DSwitchLit _ bs df -> s56_brs bs; s56_dt df
-  | DSwitchKey _ bs df -> s56_brs bs; s56_odt df
-  | DGuard e dt1 dt2 -> s56_exp e; s56_dt dt1; s56_dt dt2
+  | DLeaf e -> all_mono p q e
+  | DBind _ dt -> all_mono_dt p q dt
+  | DSwitchCtor _ bs df -> all_mono_brs p q bs; all_mono_odt p q df
+  | DSwitchLit _ bs df -> all_mono_brs p q bs; all_mono_dt p q df
+  | DSwitchKey _ bs df -> all_mono_brs p q bs; all_mono_odt p q df
+  | DGuard e dt1 dt2 -> all_mono p q e; all_mono_dt p q dt1; all_mono_dt p q dt2
 
-and s56_odt (df: option dtree)
-  : Lemma (requires exp_all_odt stage5_node df) (ensures exp_all_odt stage6_node df)
-          (decreases df) =
+and all_mono_odt (p q: exp -> bool) (df: option dtree)
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_odt p df)
+          (ensures exp_all_odt q df) (decreases df) =
   match df with
   | None -> ()
-  | Some dt -> s56_dt dt
+  | Some dt -> all_mono_dt p q dt
 
-and s56_brs (#lb: eqtype) (bs: list (lb & dtree))
-  : Lemma (requires exp_all_brs stage5_node bs) (ensures exp_all_brs stage6_node bs)
-          (decreases bs) =
+and all_mono_brs (#lb: eqtype) (p q: exp -> bool) (bs: list (lb & dtree))
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_brs p bs)
+          (ensures exp_all_brs q bs) (decreases bs) =
   match bs with
   | [] -> ()
-  | (_, dt) :: bs -> s56_dt dt; s56_brs bs
+  | (_, dt) :: bs -> all_mono_dt p q dt; all_mono_brs p q bs
 
-and s56_cls (cs: list clause)
-  : Lemma (requires exp_all_cls stage5_node cs) (ensures exp_all_cls stage6_node cs)
-          (decreases cs) =
+and all_mono_cls (p q: exp -> bool) (cs: list clause)
+  : Lemma (requires (forall (x: exp). p x ==> q x) /\ exp_all_cls p cs)
+          (ensures exp_all_cls q cs) (decreases cs) =
   match cs with
   | [] -> ()
-  | CFull _ _ _ _ b :: cs -> s56_exp b; s56_cls cs
-  | CFast _ _ _ b :: cs -> s56_exp b; s56_cls cs
+  | CFull _ _ _ _ b :: cs -> all_mono p q b; all_mono_cls p q cs
+  | CFast _ _ _ b :: cs -> all_mono p q b; all_mono_cls p q cs
 
-let stage5_frag_stage6 e = s56_exp e
+let stage5_frag_stage6 e = all_mono stage5_node stage6_node e
+
+let stage6_frag_stage7 e = all_mono stage6_node stage7_node e
 
 let stage5_no_eff #sg #gi #e #c h = eff_step_shape h
+
+let stage6_no_region #sg #gi #ra #e #ra' #c h = region_step_shape h
 
 let rec exp_all_exps_mid (p: exp -> bool) (vs: list exp) (e: exp) (es: list exp)
   : Lemma (requires exp_all_exps p (L.append vs (e :: es))) (ensures exp_all p e)
@@ -155,6 +172,8 @@ let exp_all_plug1 (p: exp -> bool) (f: frame) (e: exp)
 let stage5_frag_plug1 f e = exp_all_plug1 stage5_node f e
 
 let stage6_frag_plug1 f e = exp_all_plug1 stage6_node f e
+
+let stage7_frag_plug1 f e = exp_all_plug1 stage7_node f e
 
 let covers_plug1 sg gi f e = exp_all_plug1 (covered sg gi) f e
 
@@ -224,6 +243,7 @@ let rec value_no_step #sg #gi #ra #st #e #ra' #st' #c h
   match h with
   | S_Pure ph -> value_no_pure_head ph
   | S_Eff eh -> value_no_eff_head eh
+  | S_Region rh -> value_no_region_head rh
   | S_Ctx #_ #_ #_ #_ #x #_ #_ #_ f _ h' -> hole_value sg f x; value_no_step h'
   | S_CtxFault #_ #_ #_ #_ #x #_ #_ #_ f _ h' -> hole_value sg f x; value_no_step h'
 
@@ -256,6 +276,7 @@ let rec fault_site (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp
       with [] e a and ()
     )
   | S_Eff eh -> eff_step_shape eh
+  | S_Region rh -> region_step_shape rh
   | S_CtxFault #_ #_ #_ #_ #x #_ #_ #_ f _ h' ->
     fault_site h';
     eliminate exists (fs: list frame) (r: exp) (a: abi_fault).
@@ -270,13 +291,41 @@ let rec fault_site (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp
 
 let step_fault_shape #sg #gi #ra #st #e #ra' #st' #phi h = fault_site h
 
-(* A pure or effect head rule keeps `R` and `N`, and a frame passes them on. *)
+(* A pure or effect head rule keeps `R` and `N`, a rule of regions and
+   cells keeps `N` and keeps `R` or adds a fresh name to it, and a frame
+   passes them on. In the stage-6 fragment no rule of regions and cells
+   applies, at the root or in the hole of a frame. *)
 let rec term_site (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
-  : Lemma (ensures ra' == ra /\ st' == st) (decreases h) =
+  : Lemma (requires stage6_frag e) (ensures ra' == ra /\ st' == st) (decreases h) =
   match h with
   | S_Pure _ -> ()
   | S_Eff _ -> ()
-  | S_Ctx _ _ h' -> term_site h'
+  | S_Region rh -> stage6_no_region rh
+  | S_Ctx #_ #_ #_ #_ #x #_ #_ #_ f _ h' -> stage6_frag_plug1 f x; term_site h'
 
 let step_term_shape #sg #gi #ra #st #e #ra' #st' #e' h = term_site h
+
+let rec term_names (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
+  : Lemma (ensures st' == st /\ (ra' == ra \/ (exists (a: atom). ra' == a :: ra /\ ~(L.mem a ra))))
+          (decreases h) =
+  match h with
+  | S_Pure _ -> ()
+  | S_Eff _ -> ()
+  | S_Region rh -> region_step_shape rh
+  | S_Ctx _ _ h' -> term_names h'
+
+let step_term_names #sg #gi #ra #st #e #ra' #st' #e' h = term_names h
+
+let rec frag_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
+  : Lemma (requires stage6_frag e) (ensures stage6_step s) (decreases s) =
+  match s with
+  | S_Pure _ -> ()
+  | S_Eff _ -> ()
+  | S_Region rh -> stage6_no_region rh
+  | S_Ctx #_ #_ #_ #_ #x #_ #_ #_ f _ s' -> stage6_frag_plug1 f x; frag_step s'
+  | S_CtxFault #_ #_ #_ #_ #x #_ #_ #_ f _ s' -> stage6_frag_plug1 f x; frag_step s'
+
+let stage6_frag_step #sg #gi #ra #st #e #ra' #st' #c s = frag_step s

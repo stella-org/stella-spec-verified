@@ -3,8 +3,9 @@
    row-membership and equality premises are closed facts established by
    normalization (`assert_norm`). Each step is built from its rule as in
    `Stella.Core.Semantics.Examples.Eff`, in the empty environment, and its
-   reduct is the term of the interface by normalization. The reducts are
-   typed by the theorems, never by hand. *)
+   reduct is the term of the interface by normalization, as is the fact
+   that it uses no rule of regions and cells (`stage6_step`). The reducts
+   are typed by the theorems, never by hand. *)
 module Stella.Core.Safety.Examples.Eff
 open Stella.Core.Syntax
 open Stella.Core.Subst
@@ -203,6 +204,7 @@ let full_once_step_e =
 
 let full_once_reduct_typing () =
   eff_premises ();
+  assert_norm (stage6_step full_once_step_e);
   preservation full_once_typing full_once_step_e
 
 (* * A `fast` clause *)
@@ -235,6 +237,7 @@ let fast_step_e =
 
 let fast_reduct_typing () =
   eff_premises ();
+  assert_norm (stage6_step fast_step_e);
   preservation fast_typing fast_step_e
 
 (* * A continuation that leaves its clause *)
@@ -310,6 +313,7 @@ let reify_preserved () =
   FStar.Classical.exists_intro
     (fun (_: typing eff_sig [] (closed_ctx []) [] reify_prog t_unit TRowEmpty) -> True)
     reify_prog_typing;
+  assert_norm (stage6_step reify_step_1 /\ stage6_step reify_step_2);
   preservation_typed [] [] t_unit reify_step_1;
   preservation_typed [] [] t_unit reify_step_2;
   assert_norm (covers eff_sig empty_genv reify_prog);
@@ -341,6 +345,7 @@ let handled_progress_steps () =
 
 let reify_effect_safe () =
   eff_premises ();
+  assert_norm (stage6_steps reify_run_0 /\ stage6_steps reify_run_1 /\ stage6_steps reify_run_2);
   effect_safety reify_prog_typing reify_run_0;
   effect_safety reify_prog_typing reify_run_1;
   effect_safety reify_prog_typing reify_run_2

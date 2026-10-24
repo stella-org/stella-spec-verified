@@ -36,10 +36,10 @@ Proven so far:
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 - The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
 - Effect handlers: return, `full`, and `fast` clauses reduce as the specification gives them, deep and multi-shot.
-- Type safety for the reduction relation so far (the pure and effect rules): a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
-- Effect safety for the same rules: under a conforming global environment, from any closed term typed at the empty row, no sequence of steps reaches a `perform` that no handler of its key encloses.
+- Type safety for the pure and effect rules: a step that uses no rule of regions and cells preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
+- Effect safety for the same rules: under a conforming global environment, from any closed term typed at the empty row, no sequence of such steps reaches a `perform` that no handler of its key encloses.
 
-The rules for regions, cells, and `letrec` must re-establish type safety and effect safety when they are added.
+Under review: the rules of regions and cells. Opening, closing, reading, and writing reduce as the specification gives them, a reference reaches the innermost frame of its name, and a continuation copies the region frames it captures. Type safety and effect safety must be re-established for these rules, and for those of `letrec` when they are added.
 
 Planned:
 
@@ -62,7 +62,11 @@ What this repository establishes about Stella rests on the following, which it d
 - Only *Core-modelled* foreigns are represented: foreigns whose behaviour depends on hidden state,
   such as `Base.Array.unsafe*`, are outside the model.
 
-- The Core type checker in stella-lang is not verified against this typing relation. It is trusted to accept only programs the specification types. Differential testing against an executable Core evaluator extracted from this development would strengthen this assumption, but no such evaluator exists yet.
+- Neither the Core typechecker nor STEAM (the Stella abstract machine) is verified against
+  this typing and reduction relation. It is trusted to accept only programs the specification
+  types and STEAM executes according to the reduction rules. Differential testing against an
+  executable Core evaluator extracted from this development would strengthen this assumption,
+  but no such evaluator exists yet.
 
 ## References
 

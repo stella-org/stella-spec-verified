@@ -1,13 +1,16 @@
 (**
  * The reduction relation (spec 06 §Reduction, §Ordinary reduction,
  * §Chains of a constructor or a foreign, §Pattern matching, §Join points,
- * §Operations and handlers, §Where a handler finishes, §Evaluation
- * contexts).
+ * §Operations and handlers, §Where a handler finishes, §Regions, §Cells,
+ * §Evaluation contexts).
  *
  *     pure_head sg G e c                    G ⊢ e → c, a head rule that
  *                                           leaves the store alone
  *     eff_head sg G e c                     G ⊢ e → c, a rule of
  *                                           operations and handlers
+ *     region_head sg G R e R' c             G ⊢ e → c, a rule of regions
+ *                                           and cells, from the names `R`
+ *                                           to the names `R'`
  *     step sg G R N e R' N' c               G ⊢ N; e → N'; c
  *
  * A configuration (`Stella.Core.Semantics.Env.config`) is a term or a
@@ -27,10 +30,12 @@
  * points. `eff_head` holds the rules of spec 06 §Operations and handlers
  * and §Where a handler finishes. They read neither the store nor `R`
  * either, and form a group of their own: the rules that install, remove
- * and reinstall a handler.
+ * and reinstall a handler. `region_head` holds the rules of spec 06
+ * §Regions and §Cells. They leave the store alone, and the opening of a
+ * region is the one rule that changes `R`, adding the name it allocates.
  * Each group is added to `step` by a constructor of its own (`S_Pure`,
- * `S_Eff`). The rules of regions and cells and of recursive bindings are
- * not among the rules of `step`.
+ * `S_Eff`, `S_Region`). The rules of recursive bindings are not among the
+ * rules of `step`.
  *
  * The spec's metavariables are premises: a `v` or `w` is a term that
  * `is_value` accepts. Substitution is de Bruijn (`Stella.Core.Subst`):
@@ -83,14 +88,19 @@
  * ## Fragments
  *
  * `stage5_frag` is the fragment whose terms only the pure head rules
- * reduce, and `stage6_frag` the fragment whose terms the pure head rules
- * and the rules of operations and handlers reduce. Each rules out the
- * forms of the rules beyond it, at every node of the term.
+ * reduce, `stage6_frag` the fragment whose terms the pure head rules and
+ * the rules of operations and handlers reduce, and `stage7_frag` the
+ * fragment whose terms these and the rules of regions and cells reduce.
+ * Each rules out the forms of the rules beyond it, at every node of the
+ * term. `stage6_step` picks out the derivations of `step` that use no rule
+ * of regions and cells.
  *)
 module Stella.Core.Semantics.Step
 open Stella.Core.Syntax
 open Stella.Core.Subst
 open Stella.Core.Sig
+open Stella.Core.Prim
+open Stella.Core.Region
 open Stella.Core.Spine
 open Stella.Core.Erase
 open Stella.Core.Typing.Aux
@@ -495,6 +505,94 @@ val eff_step_shape (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg
 val value_no_eff_head (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg gi e c)
   : Lemma (requires V.is_value sg e) (ensures False)
 
+(** * The rules of regions and cells
+
+    Spec 06 §Regions, §Cells. `region_head sg G R e R' c` reads `R`, the
+    region names allocated so far, and gives `R'`.
+
+    An opening allocates a name `a` that is in neither `R` nor the redex,
+    its layout and initial values included, and steps to
+    `region⟨a⟩ ( k̄ ↦ v̄ ) in e[ℓ := a]`: the cells hold the initial values
+    under the layout's keys, in the layout's order (`init_cells`), and the
+    body is opened with `a` (`Stella.Core.Region.open_region`), in its
+    type annotations as well as its terms. `R'` is `a :: R`. A value
+    reaching an open region frame closes it, and every other rule keeps
+    `R`.
+
+    A cell `a.k` is read or written by the innermost open region frame
+    named `a`: the `readCell` or `writeCell` stands in the hole of an
+    `Ev_ℓ` (`ev_l a fs` with `frames_ok sg fs`), which has no open region
+    frame of that name. The reference is `RFree a`, a closed term holding
+    no `RBound`, and the frame holds values (`cells_values`). A read
+    requires `θ` to have a cell of the key `k` and reads the first one
+    (`L.assoc`); a write requires one as well and replaces the value of
+    the first one (`cells_update`), every cell keeping its key and its
+    position. *)
+
+(** `Prim.Unit` *)
+let unit_exp : exp = EGlobal prim_unit_ctor []
+
+(** `( k̄ ↦ v̄ )`: each key with the value at its position, in order. *)
+let rec init_cells (ks: list key) (vs: list exp) : Tot (list (key & exp)) (decreases ks) =
+  match ks, vs with
+  | k :: ks', v :: vs' -> (k, v) :: init_cells ks' vs'
+  | _ -> []
+
+(** `θ[k ↦ v]`: the first cell of the key `k` holds `v`, and every cell
+    keeps its key and its position. *)
+let rec cells_update (th: list (key & exp)) (k: key) (v: exp)
+  : Tot (list (key & exp)) (decreases th) =
+  match th with
+  | [] -> []
+  | (k', w) :: th' -> if k' = k then (k', v) :: th' else (k', w) :: cells_update th' k v
+
+noeq type region_head (sg: sig) (gi: genv) : list atom -> exp -> list atom -> config -> Type =
+
+  (** `region [ℓ] ( k̄ : σ̄ ) @ ( v̄ ) in e  →  region⟨a⟩ ( k̄ ↦ v̄ ) in e[ℓ := a]`,
+      `a` fresh for `R` and for the redex, with `R' = a :: R` *)
+  | RH_Open :
+      #ra:list atom -> #lay:list (key & typ) -> #vs:list exp -> #body:exp -> #a:atom ->
+      squash (L.for_all (V.is_value sg) vs /\ L.length vs == L.length lay) ->
+      squash (~(L.mem a ra) /\ ~(L.mem a (frn_exp (ERegion lay vs body)))) ->
+      region_head sg gi ra (ERegion lay vs body) (a :: ra)
+        (CTerm (ERegionOpen a (init_cells (L.map fst lay) vs) (open_region a body)))
+
+  (** `region⟨a⟩ θ in v  →  v` *)
+  | RH_Exit :
+      #ra:list atom -> #a:atom -> #th:list (key & exp) -> #v:exp ->
+      squash (V.is_value sg v) ->
+      region_head sg gi ra (ERegionOpen a th v) ra (CTerm v)
+
+  (** `region⟨a⟩ θ in Ev_ℓ[readCell a.k]  →  region⟨a⟩ θ in Ev_ℓ[θ(k)]` *)
+  | RH_Read :
+      #ra:list atom -> #a:atom -> #th:list (key & exp) -> #fs:list frame -> #k:key -> #v:exp ->
+      squash (frames_ok sg fs /\ ev_l a fs /\ cells_values sg th) ->
+      squash (L.assoc k th == Some v) ->
+      region_head sg gi ra (ERegionOpen a th (plug fs (EReadCell (RFree a) k))) ra
+        (CTerm (ERegionOpen a th (plug fs v)))
+
+  (** `region⟨a⟩ θ in Ev_ℓ[writeCell a.k v]
+         →  region⟨a⟩ θ[k ↦ v] in Ev_ℓ[Prim.Unit]` *)
+  | RH_Write :
+      #ra:list atom -> #a:atom -> #th:list (key & exp) -> #fs:list frame -> #k:key -> #v:exp ->
+      squash (frames_ok sg fs /\ ev_l a fs /\ cells_values sg th) ->
+      squash (V.is_value sg v /\ Some? (L.assoc k th)) ->
+      region_head sg gi ra (ERegionOpen a th (plug fs (EWriteCell (RFree a) k v))) ra
+        (CTerm (ERegionOpen a (cells_update th k v) (plug fs unit_exp)))
+
+(** A rule of regions and cells rewrites a `region` or an open region
+    frame and steps to a term, never to a fault. It keeps `R`, or adds to
+    it one name not already in it. *)
+val region_step_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#e: exp) (#ra': list atom)
+  (#c: config) (h: region_head sg gi ra e ra' c)
+  : Lemma ((ERegion? e \/ ERegionOpen? e) /\ CTerm? c /\
+           (ra' == ra \/ (exists (a: atom). ra' == a :: ra /\ ~(L.mem a ra))))
+
+(** A value is no redex of a rule of regions and cells. *)
+val value_no_region_head (#sg: sig) (#gi: genv) (#ra: list atom) (#e: exp) (#ra': list atom)
+  (#c: config) (h: region_head sg gi ra e ra' c)
+  : Lemma (requires V.is_value sg e) (ensures False)
+
 (** * Steps *)
 
 (** `G ⊢ N; e → N'; c`, with `R` and `R'` the region names allocated
@@ -513,6 +611,12 @@ noeq type step (sg: sig) (gi: genv)
       #ra:list atom -> #st:store -> #e:exp -> #c:config ->
       eff_head sg gi e c ->
       step sg gi ra st e ra st c
+
+  (** A rule of regions and cells, which leaves `N` as it is. *)
+  | S_Region :
+      #ra:list atom -> #st:store -> #e:exp -> #ra':list atom -> #c:config ->
+      region_head sg gi ra e ra' c ->
+      step sg gi ra st e ra' st c
 
   (** `G ⊢ N; e → N'; e'` gives `G ⊢ N; f[e] → N'; f[e']`. *)
   | S_Ctx :
@@ -544,7 +648,7 @@ val step_plug_fault (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: ex
   : Pure (step sg gi ra st (plug fs e) ra' st' (CFault phi))
          (requires frames_ok sg fs) (ensures fun _ -> True)
 
-(** * The fragments of stages 5 and 6 *)
+(** * The fragments of stages 5, 6 and 7 *)
 
 (** A node is none of `perform`, `handle`, `region`, an open region frame,
     `readCell`, `writeCell`, `letrec`, `force` and `fill`, whose rules are
@@ -572,13 +676,44 @@ let stage6_node (e: exp) : bool =
 (** `e` has no such node anywhere. *)
 let stage6_frag (e: exp) : bool = exp_all stage6_node e
 
+(** A node is none of `letrec`, `force` and `fill`, whose rules are not
+    among the rules of `step`. *)
+let stage7_node (e: exp) : bool =
+  match e with
+  | ELetRec _ _ | EForce _ | EFill _ _ -> false
+  | _ -> true
+
+(** `e` has no such node anywhere. *)
+let stage7_frag (e: exp) : bool = exp_all stage7_node e
+
 (** The stage-5 fragment is part of the stage-6 fragment. *)
 val stage5_frag_stage6 (e: exp) : Lemma (requires stage5_frag e) (ensures stage6_frag e)
+
+(** The stage-6 fragment is part of the stage-7 fragment. *)
+val stage6_frag_stage7 (e: exp) : Lemma (requires stage6_frag e) (ensures stage7_frag e)
 
 (** A term of the stage-5 fragment has no `handle` at its root, so no rule
     of operations and handlers applies to it. *)
 val stage5_no_eff (#sg: sig) (#gi: genv) (#e: exp) (#c: config) (h: eff_head sg gi e c)
   : Lemma (requires stage5_frag e) (ensures False)
+
+(** A term of the stage-6 fragment has no `region` and no open region
+    frame at its root, so no rule of regions and cells applies to it. *)
+val stage6_no_region (#sg: sig) (#gi: genv) (#ra: list atom) (#e: exp) (#ra': list atom)
+  (#c: config) (h: region_head sg gi ra e ra' c)
+  : Lemma (requires stage6_frag e) (ensures False)
+
+(** The derivation `s` uses no rule of regions and cells: its head rule,
+    under the frames of `S_Ctx` and `S_CtxFault`, is a pure head rule or a
+    rule of operations and handlers. *)
+let rec stage6_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
+  : Tot bool (decreases s) =
+  match s with
+  | S_Pure _ | S_Eff _ -> true
+  | S_Region _ -> false
+  | S_Ctx _ _ s' -> stage6_step s'
+  | S_CtxFault _ _ s' -> stage6_step s'
 
 (** * Preconditions *)
 
@@ -621,6 +756,9 @@ val stage5_frag_plug1 (f: frame) (e: exp)
 
 val stage6_frag_plug1 (f: frame) (e: exp)
   : Lemma (requires stage6_frag (plug1 f e)) (ensures stage6_frag e)
+
+val stage7_frag_plug1 (f: frame) (e: exp)
+  : Lemma (requires stage7_frag (plug1 f e)) (ensures stage7_frag e)
 
 val covers_plug1 (sg: sig) (gi: genv) (f: frame) (e: exp)
   : Lemma (requires covers sg gi (plug1 f e)) (ensures covers sg gi e)
@@ -675,7 +813,8 @@ let foreign_faults (sg: sig) (gi: genv) (r: exp) (a: abi_fault) : prop =
     `φ_init`, and leaves `R` and `N` as they are: it is the rule for a
     saturated foreign chain at an evaluation position of `e`, whose
     adapter returns that fault, propagated out of the context. No rule of
-    operations and handlers produces a fault (`eff_step_shape`). *)
+    operations and handlers and no rule of regions and cells produces a
+    fault (`eff_step_shape`, `region_step_shape`). *)
 val step_fault_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#phi: fault) (h: step sg gi ra st e ra' st' (CFault phi))
   : Lemma (requires stage6_frag e)
@@ -690,3 +829,16 @@ val step_fault_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: e
 val step_term_shape (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
   (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires stage6_frag e) (ensures ra' == ra /\ st' == st)
+
+(** A step to a term leaves `N` as it is, and keeps `R` or adds to it one
+    name not already in it: the opening of a region at an evaluation
+    position of `e` is the one rule that changes `R`. *)
+val step_term_names (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#e': exp) (h: step sg gi ra st e ra' st' (CTerm e'))
+  : Lemma (st' == st /\ (ra' == ra \/ (exists (a: atom). ra' == a :: ra /\ ~(L.mem a ra))))
+
+(** A step of a term of the stage-6 fragment uses no rule of regions and
+    cells. *)
+val stage6_frag_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#c: config) (s: step sg gi ra st e ra' st' c)
+  : Lemma (requires stage6_frag e) (ensures stage6_step s)

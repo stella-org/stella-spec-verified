@@ -25,7 +25,8 @@ let rec steps_pres (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)
   (h: typing sg ln (closed_ctx rs) [] e t TRowEmpty)
   (s: steps sg gi ra st e ra' st' e')
   : Ghost (typing sg ln (closed_ctx rs) [] e' t TRowEmpty)
-          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage6_steps s)
           (ensures fun _ -> True)
           (decreases s) =
   match s with
@@ -38,7 +39,7 @@ let rec steps_typed_aux (#sg: sig) (#gi: genv) (ln: lctx) (rs: list (atom & layo
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (t: typ) (s: steps sg gi ra st e ra' st' e')
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    typed sg ln (closed_ctx rs) e t)
+                    stage6_steps s /\ typed sg ln (closed_ctx rs) e t)
           (ensures typed sg ln (closed_ctx rs) e' t)
           (decreases s) =
   match s with

@@ -8,8 +8,10 @@
  *
  *     Γ_R; Γ_N; Δ ⊢ e : τ ! ρ   and   e → e'   give   Γ_R; Γ_N; Δ ⊢ e' : τ ! ρ
  *
- * Every rule of `step` is covered: the pure rules and the rules of
- * operations and handlers, at the root or under any evaluation frame.
+ * The theorem covers the steps that use no rule of regions and cells
+ * (`Stella.Core.Semantics.Step.stage6_step`): the pure rules and the
+ * rules of operations and handlers, at the root or under any evaluation
+ * frame.
  *
  * The hypotheses are the part of the premises of spec 06 §Properties
  * that does not concern the store: a well-formed `Σ` (`sig_ok`),
@@ -18,10 +20,9 @@
  * premises are left out, so the statement is stronger than the spec's:
  *
  *   - the store typing `⊢ N : Γ_N`, with the facts relating `R` to `Γ_R`.
- *     No rule of `step` reads or writes the store, allocates a location,
- *     or opens a region (`Stella.Core.Semantics.Step.step_term_shape`),
- *     so none needs them, and `Γ_R` and `Γ_N` are the same on both sides
- *     of a step;
+ *     None of these rules reads or writes the store, allocates a location,
+ *     or opens a region, so none needs them, and `Γ_R` and `Γ_N` are the
+ *     same on both sides of a step;
  *   - that the term respects the preconditions of the foreigns it calls
  *     (`Stella.Core.Semantics.Step.pre_ok`). The rule for a saturated
  *     foreign chain has the precondition of its call as a premise of its
@@ -66,23 +67,25 @@ open Stella.Core.Typing.Runtime
 open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Step
 
-(** A step to a term keeps the type, the row and the `Δ` of a derivation
-    of a closed run-time term. *)
+(** A step to a term that uses no rule of regions and cells keeps the
+    type, the row and the `Δ` of a derivation of a closed run-time term. *)
 val preservation (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (#d: jctx) (#t #r: typ)
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Ghost (typing sg ln (closed_ctx rs) d e' t r)
-          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage6_step s)
           (ensures fun _ -> True)
 
 (** At the root of a program: a closed term typed at `τ`, under no join
-    point and at the row `()`, steps to a term of the same type. `Γ_N = ln`
+    point and at the row `()`, steps to a term of the same type, by a step
+    that uses no rule of regions and cells. `Γ_N = ln`
     and `Γ_R = rs` occur in the hypotheses alone, so they are explicit. *)
 val preservation_typed (#sg: sig) (#gi: genv) (ln: lctx) (rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (t: typ) (s: step sg gi ra st e ra' st' (CTerm e'))
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    typed sg ln (closed_ctx rs) e t)
+                    stage6_step s /\ typed sg ln (closed_ctx rs) e t)
           (ensures typed sg ln (closed_ctx rs) e' t)

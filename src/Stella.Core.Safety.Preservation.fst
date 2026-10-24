@@ -1,6 +1,7 @@
 (* Proof structure.
 
-   By induction on the step. A step under a frame is split at the hole
+   By induction on the step, which uses no rule of regions and cells
+   (`stage6_step`). A step under a frame is split at the hole
    (`plug1_typing`), the induction types the hole's reduct at the hole's
    own `Δ` and row, and the frame is filled back, the cursor of a chain
    being kept by the step (`step_plug1_cursor_kept`). A value has no step,
@@ -1237,7 +1238,8 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (h: typing sg ln (closed_ctx rs) d e t r)
   (s: step sg gi ra st e ra' st' (CTerm e'))
   : Ghost (typing sg ln (closed_ctx rs) d e' t r)
-          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage6_step s)
           (ensures fun _ -> True)
           (decreases s) =
   match s with
@@ -1245,6 +1247,7 @@ let rec pres_step (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
     pres_head #sg #gi #ln #rs #d #e #e' #t #r h ph
   | S_Eff #_ #_ #_ #_ #e0 #c eh ->
     pres_eff #sg #gi #ln #rs #d #e #e' #t #r h eh
+  | S_Region _ -> false_elim ()
   | S_Ctx #_ #_ #_ #_ #e1 #_ #_ #e1' f _ s1 ->
     rctx_ok_wf_ctx sg rs;
     if V.is_value sg e1 then begin

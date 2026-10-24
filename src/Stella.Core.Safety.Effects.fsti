@@ -30,12 +30,11 @@
  * Coverage preservation (`Stella.Core.Safety.Covers.preservation_covers`)
  * is a separate result, used to chain Progress along a sequence.
  *
- * The theorem is about the reduction relation as it stands: the pure head
- * rules and the rules of operations and handlers. None of these opens a
- * region, allocates a location or touches the store, so `Γ_R` and `Γ_N`
- * are the same along a sequence. Stages 7 and 8 add the rules of regions,
- * cells and recursive bindings, which extend `Γ_R` and `Γ_N`, and Effect
- * safety is established again for the relation they give.
+ * The theorems are about the sequences whose steps use no rule of regions
+ * and cells (`stage6_steps`), the steps preservation covers: the pure
+ * head rules and the rules of operations and handlers. None of these
+ * opens a region, allocates a location or touches the store, so `Γ_R` and
+ * `Γ_N` are the same along such a sequence.
  *)
 module Stella.Core.Safety.Effects
 open Stella.Core.Syntax
@@ -70,17 +69,28 @@ noeq type steps (sg: sig) (gi: genv)
       steps sg gi ra1 st1 e1 ra' st' e' ->
       steps sg gi ra st e ra' st' e'
 
+(** Every step of the sequence uses no rule of regions and cells
+    (`Stella.Core.Semantics.Step.stage6_step`). *)
+let rec stage6_steps (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp)
+  (#ra': list atom) (#st': store) (#e': exp) (s: steps sg gi ra st e ra' st' e')
+  : Tot bool (decreases s) =
+  match s with
+  | Steps_Refl -> true
+  | Steps_Step s1 rest -> stage6_step s1 && stage6_steps rest
+
 (** * Preservation along a sequence *)
 
-(** Every term of a sequence from a closed program has the program's type
-    at the row `()`, under no join point. *)
+(** Every term of a sequence from a closed program, its steps using no
+    rule of regions and cells, has the program's type at the row `()`,
+    under no join point. *)
 val steps_preservation (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (#t: typ)
   (h: typing sg ln (closed_ctx rs) [] e t TRowEmpty)
   (s: steps sg gi ra st e ra' st' e')
   : Ghost (typing sg ln (closed_ctx rs) [] e' t TRowEmpty)
-          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+          (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage6_steps s)
           (ensures fun _ -> True)
 
 (** The same, for `typed`. `Γ_N = ln` and `Γ_R = rs` occur in the
@@ -89,13 +99,14 @@ val steps_typed (#sg: sig) (#gi: genv) (ln: lctx) (rs: list (atom & layout))
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (t: typ) (s: steps sg gi ra st e ra' st' e')
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    typed sg ln (closed_ctx rs) e t)
+                    stage6_steps s /\ typed sg ln (closed_ctx rs) e t)
           (ensures typed sg ln (closed_ctx rs) e' t)
 
 (** * Effect safety *)
 
 (** Effect safety (spec 06 §Properties): no reduction sequence from a
-    closed program typed `Γ_R; Γ_N; · ⊢ e : τ ! ()` reaches a term
+    closed program typed `Γ_R; Γ_N; · ⊢ e : τ ! ()`, its steps using no
+    rule of regions and cells, reaches a term
     `Ev_k[perform k.op [σ̄] v]` in which no handler of key `k` encloses the
     hole. *)
 val effect_safety (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
@@ -103,7 +114,8 @@ val effect_safety (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout))
   (#t: typ)
   (h: typing sg ln (closed_ctx rs) [] e t TRowEmpty)
   (s: steps sg gi ra st e ra' st' e')
-  : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi)
+  : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
+                    stage6_steps s)
           (ensures ~(unhandled_perform sg e'))
 
 (** Effect safety, for `typed`. *)
@@ -111,5 +123,5 @@ val effect_safety_typed (#sg: sig) (#gi: genv) (ln: lctx) (rs: list (atom & layo
   (#ra: list atom) (#st: store) (#e: exp) (#ra': list atom) (#st': store) (#e': exp)
   (t: typ) (s: steps sg gi ra st e ra' st' e')
   : Lemma (requires sig_ok sg /\ rctx_ok sg rs /\ lctx_ok sg rs ln /\ genv_ok sg ln rs gi /\
-                    typed sg ln (closed_ctx rs) e t)
+                    stage6_steps s /\ typed sg ln (closed_ctx rs) e t)
           (ensures ~(unhandled_perform sg e'))
