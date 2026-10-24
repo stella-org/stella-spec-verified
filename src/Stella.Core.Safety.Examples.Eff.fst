@@ -27,6 +27,9 @@ open Stella.Core.Semantics.Examples
 open Stella.Core.Semantics.Examples.Eff
 open Stella.Core.Safety.Preservation
 open Stella.Core.Safety.Covers
+open Stella.Core.Safety.Progress.Eff
+open Stella.Core.Safety.Progress
+open Stella.Core.Safety.Effects
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 
@@ -313,3 +316,31 @@ let reify_preserved () =
   preservation_covers reify_prog_typing reify_step_1;
   let h1 = preservation reify_prog_typing reify_step_1 in
   preservation_covers h1 reify_step_2
+
+(* * Progress *)
+
+let empty_genv_pre_ok sg e =
+  introduce forall (fs: list frame) (r: exp).
+      (frames_ok sg fs /\ e == plug fs r /\ V.foreign_redex sg r) ==> foreign_pre_ok empty_genv r
+  with introduce _ ==> _
+  with (match decompose_global_app r with
+        | Some _ -> ()
+        | None -> ())
+
+let handled_terms_ok () =
+  assert_norm (stage6_frag (EHandle log_hi h_once));
+  assert_norm (covers eff_sig empty_genv (EHandle log_hi h_once));
+  assert_norm (stage6_frag reify_prog);
+  assert_norm (covers eff_sig empty_genv reify_prog)
+
+let handled_progress_steps () =
+  assert_norm (not (V.is_value eff_sig (EHandle log_hi h_once)));
+  assert_norm (not (V.is_value eff_sig reify_prog))
+
+(* * Effect safety *)
+
+let reify_effect_safe () =
+  eff_premises ();
+  effect_safety reify_prog_typing reify_run_0;
+  effect_safety reify_prog_typing reify_run_1;
+  effect_safety reify_prog_typing reify_run_2

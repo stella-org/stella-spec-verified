@@ -19,11 +19,18 @@
    Each form has one helper (`prog_*`). A subterm in an evaluation
    position that is no value is split off by `plug1_typing` and its
    outcome lifted through the frame (`lift_frame`): a step by `S_Ctx` or
-   `S_CtxFault`; a jump is impossible, the hole standing under `Δ = []`.
-   The continuation of `letjoin` is the exception (`prog_letjoin`): its
-   hole stands under the `letjoin`'s join point, so a jump to it takes
-   the join rule, the arity coming from the `jump`'s typing through
-   `tl_typing` (`join_arity`), and a jump past it is one frame longer.
+   `S_CtxFault`; a jump is impossible, the hole standing under `Δ = []`;
+   a `perform` is one in a context one frame longer (`lift_perform`),
+   the frame being no `handle`. The continuation of `letjoin` is one
+   exception (`prog_letjoin`): its hole stands under the `letjoin`'s
+   join point, so a jump to it takes the join rule, the arity coming from
+   the `jump`'s typing through `tl_typing` (`join_arity`), and a jump
+   past it is one frame longer. `handle` is the other
+   (`prog_handle`): a `perform` of its key takes the rule of its clause,
+   which `Stella.Core.Safety.Progress.Eff.handled_perform_redex` builds
+   (`w_handled`), and one of another key is lifted. A `perform` with a
+   value argument is itself the outcome (`prog_perform`), and at the root
+   it is refuted by the row `()` (`progress_top`).
    When every evaluation subterm is a value, the redex is read off the
    canonical forms, and the stuck shapes are refuted by recursion on the
    derivation through its conversions (`*_stuck`). A chain extended by a
@@ -55,6 +62,7 @@ open Stella.Core.Semantics.Env
 open Stella.Core.Semantics.Ctx
 open Stella.Core.Semantics.Step
 open Stella.Core.Safety.Hidden
+open Stella.Core.Safety.Progress.Eff
 module L = FStar.List.Tot
 module V = Stella.Core.Value
 module TC = Stella.Core.Typing.Ctor
@@ -63,14 +71,14 @@ module TC = Stella.Core.Typing.Ctor
 
 [@@"opaque_to_smt"]
 let term_ok (sg: sig) (gi: genv) (e: exp) : prop =
-  stage5_frag e /\ covers sg gi e /\ pre_ok sg gi e
+  stage6_frag e /\ covers sg gi e /\ pre_ok sg gi e
 
 let term_ok_intro (sg: sig) (gi: genv) (e: exp)
-  : Lemma (requires stage5_frag e /\ covers sg gi e /\ pre_ok sg gi e) (ensures term_ok sg gi e) =
+  : Lemma (requires stage6_frag e /\ covers sg gi e /\ pre_ok sg gi e) (ensures term_ok sg gi e) =
   reveal_opaque (`%term_ok) (term_ok sg gi e)
 
 let term_ok_frag (sg: sig) (gi: genv) (e: exp)
-  : Lemma (requires term_ok sg gi e) (ensures stage5_frag e) =
+  : Lemma (requires term_ok sg gi e) (ensures stage6_frag e) =
   reveal_opaque (`%term_ok) (term_ok sg gi e)
 
 let term_ok_covers (sg: sig) (gi: genv) (e: exp)
@@ -85,7 +93,7 @@ let term_ok_root (sg: sig) (gi: genv) (e: exp)
 let term_ok_plug1 (sg: sig) (gi: genv) (f: frame) (e: exp)
   : Lemma (requires frame_ok sg f /\ term_ok sg gi (plug1 f e)) (ensures term_ok sg gi e) =
   reveal_opaque (`%term_ok) (term_ok sg gi (plug1 f e));
-  stage5_frag_plug1 f e;
+  stage6_frag_plug1 f e;
   covers_plug1 sg gi f e;
   pre_ok_plug1 sg gi f e;
   reveal_opaque (`%term_ok) (term_ok sg gi e)
@@ -267,14 +275,29 @@ let lift_step (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#e: exp) (#r
   | CTerm e' -> S_Ctx #sg #gi #ra #st #e #ra' #st' #e' f () s
   | CFault phi -> S_CtxFault #sg #gi #ra #st #e #ra' #st' #phi f () s
 
-(* The outcome of the hole of a frame other than a `letjoin` continuation:
-   its hole stands under `Δ = []`, so it is no jump. *)
+(* A `perform` in the hole of a frame other than a `handle` of its key is
+   one in the context extended by the frame. *)
+let lift_perform (#sg: sig) (#gi: genv) (#ra: list atom) (#st: store) (#d: jctx) (e: exp)
+  (f: frame) (e0: exp) (fs: list frame) (k: key) (op: opname) (ss: list typ) (v: exp)
+  : Pure (pin sg gi ra st d e)
+         (requires e == plug1 f e0 /\ e0 == plug fs (EPerform k op ss v) /\ ev_k k fs /\
+                   frames_ok sg fs /\ V.is_value sg v /\ frame_ok sg f /\ not_handle_of k f)
+         (ensures fun _ -> True) =
+  plug_snoc fs f (EPerform k op ss v);
+  L.for_all_append (not_handle_of k) fs [f];
+  L.for_all_append (frame_ok sg) fs [f];
+  PIPerform (L.append fs [f]) k op ss v ()
+
+(* The outcome of the hole of a frame other than a `letjoin` continuation
+   or a `handle`: its hole stands under `Δ = []`, so it is no jump, and
+   a `perform` there is one of the frame. *)
 let lift_frame (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (ra: list atom)
   (st: store) (#d: jctx) (#t #r: typ) (e: exp) (h: typing sg ln (closed_ctx rs) d e t r)
   (f: frame) (e0: exp) (ih: ih_t sg gi ln rs ra st e)
   : Pure (pin sg gi ra st d e)
          (requires env_ok sg gi ln rs /\ term_ok sg gi e /\ e == plug1 f e0 /\ e0 << e /\
-                   frame_ok sg f /\ not (V.is_value sg e0) /\ not (FLetJoin? f))
+                   frame_ok sg f /\ not (V.is_value sg e0) /\ not (FLetJoin? f) /\
+                   not (FHandle? f))
          (ensures fun _ -> True) =
   let h1 = retm h (plug1 f e0) in
   env_ok_sok sg gi ln rs;
@@ -286,6 +309,7 @@ let lift_frame (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (r
   | PIStep ra' st' c s ->
     PIStep ra' st' (lift_config f c) (coerce_step e (lift_config f c) (lift_step f s))
   | PIJump _ _ _ _ -> false_elim ()
+  | PIPerform fs k op ss v _ -> lift_perform e f e0 fs k op ss v
 
 (* * Foreign redexes *)
 
@@ -535,6 +559,7 @@ let prog_letjoin (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) 
         tl_frames_snoc fs f;
         PIJump (L.append fs [f]) n vs ()
       end
+    | PIPerform fs k op ss v _ -> lift_perform e f e2 fs k op ss v
   end
 
 (* * Records *)
@@ -829,6 +854,66 @@ let prog_match (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (r
      | DSwitchKey o bs df -> prog_switch_key #sg #gi #ln #rs ra st th o bs df hm hdt)
   | _ -> false_elim ()
 
+(* * Operations and handlers *)
+
+(* An effect rule at the root. *)
+let pi_eff (#sg: sig) (#gi: genv) (ra: list atom) (st: store) (#d: jctx) (e: exp) (#e0: exp)
+  (#c: config) (eh: eff_head sg gi e0 c)
+  : Pure (pin sg gi ra st d e) (requires e0 == e) (ensures fun _ -> True) =
+  PIStep ra st c (coerce_step e c (S_Eff #sg #gi #ra #st #e0 #c eh))
+
+(* `Stella.Core.Safety.Progress.Eff.handled_perform_redex`, revealing the
+   premises. *)
+let w_handled (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (#d: jctx)
+  (#fs: list frame) (#k: key) (#op: opname) (#ss: list typ) (#v: exp) (#hd: handler)
+  (#t #r: typ) (h: typing sg ln (closed_ctx rs) d (EHandle (plug fs (EPerform k op ss v)) hd) t r)
+  : Pure (c: config & eff_head sg gi (EHandle (plug fs (EPerform k op ss v)) hd) c)
+         (requires env_ok sg gi ln rs /\ frames_ok sg fs /\ ev_k k fs /\ V.is_value sg v /\
+                   handler_key hd == k)
+         (ensures fun _ -> True) =
+  env_ok_elim sg gi ln rs;
+  handled_perform_redex #sg #gi #ln #rs #d #fs #k #op #ss #v #hd #t #r h
+
+let prog_perform (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (ra: list atom)
+  (st: store) (#d: jctx) (#t #r: typ) (k: key) (op: opname) (ss: list typ) (e0: exp)
+  (h: typing sg ln (closed_ctx rs) d (EPerform k op ss e0) t r)
+  (ih: ih_t sg gi ln rs ra st (EPerform k op ss e0))
+  : Pure (pin sg gi ra st d (EPerform k op ss e0))
+         (requires env_ok sg gi ln rs /\ term_ok sg gi (EPerform k op ss e0))
+         (ensures fun _ -> True) =
+  if not (V.is_value sg e0) then
+    lift_frame ra st (EPerform k op ss e0) h (FPerform k op ss) e0 ih
+  else PIPerform [] k op ss e0 ()
+
+let prog_handle (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (ra: list atom)
+  (st: store) (#d: jctx) (#t #r: typ) (e0: exp) (hd: handler)
+  (h: typing sg ln (closed_ctx rs) d (EHandle e0 hd) t r)
+  (ih: ih_t sg gi ln rs ra st (EHandle e0 hd))
+  : Pure (pin sg gi ra st d (EHandle e0 hd))
+         (requires env_ok sg gi ln rs /\ term_ok sg gi (EHandle e0 hd))
+         (ensures fun _ -> True) =
+  let e = EHandle e0 hd in
+  if V.is_value sg e0 then pi_eff ra st e (EH_Return #sg #gi #e0 #hd ())
+  else begin
+    let f = FHandle hd in
+    env_ok_sok sg gi ln rs;
+    let p = plug1_typing_h #sg #ln #(closed_ctx rs) #d #f #e0 h in
+    let _ = p.hole_ctx in
+    term_ok_plug1 sg gi f e0;
+    match ih e0 p.hd p.ht p.hr p.hole with
+    | PIValue _ -> false_elim ()
+    | PIStep ra' st' c s -> PIStep ra' st' (lift_config f c) (lift_step f s)
+    | PIJump _ _ _ _ -> false_elim ()
+    | PIPerform fs k op ss v _ ->
+      if k = handler_key hd then begin
+        let (| c, eh |) =
+          w_handled #sg #gi #ln #rs #d #fs #k #op #ss #v #hd #t #r
+            (retm h (EHandle (plug fs (EPerform k op ss v)) hd)) in
+        pi_eff ra st e eh
+      end
+      else lift_perform e f e0 fs k op ss v
+  end
+
 (* * The induction *)
 
 let rec prog (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (ra: list atom)
@@ -862,7 +947,9 @@ let rec prog (#sg: sig) (#gi: genv) (#ln: lctx) (#rs: list (atom & layout)) (ra:
   | EOpenEff r1 e0 -> prog_openeff ra st r1 e0 h ih
   | EOpenEffC r1 e0 -> prog_openeffc ra st r1 e0 h ih
   | EMatch th dt -> prog_match ra st th dt h ih
-  | EPerform _ _ _ _ | EHandle _ _ | ERegion _ _ _ | ERegionOpen _ _ _
+  | EPerform k op ss e0 -> prog_perform ra st k op ss e0 h ih
+  | EHandle e0 hd -> prog_handle ra st e0 hd h ih
+  | ERegion _ _ _ | ERegionOpen _ _ _
   | EReadCell _ _ | EWriteCell _ _ _ | ELetRec _ _ | EForce _ | EFill _ _ ->
     term_ok_frag sg gi e; false_elim ()
 
@@ -878,3 +965,7 @@ let progress_top #sg #gi #ln #rs #e #t h ra st =
   | PIValue sq -> PValue sq
   | PIStep ra' st' c s -> PStep ra' st' c s
   | PIJump _ _ _ _ -> false_elim ()
+  | PIPerform fs k op ss v _ ->
+    rctx_ok_wf_ctx sg rs;
+    unhandled_perform_untypable h;
+    false_elim ()

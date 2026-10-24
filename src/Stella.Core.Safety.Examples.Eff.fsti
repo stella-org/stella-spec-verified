@@ -1,7 +1,9 @@
 (**
- * Preservation along steps of the rules of operations and handlers
- * (`Stella.Core.Safety.Preservation`, `Stella.Core.Safety.Covers`; spec 06
- * §Operations and handlers, §Properties).
+ * The safety theorems at the rules of operations and handlers (spec 06
+ * §Operations and handlers, §Properties): preservation
+ * (`Stella.Core.Safety.Preservation`, `Stella.Core.Safety.Covers`),
+ * progress (`Stella.Core.Safety.Progress`) and Effect safety
+ * (`Stella.Core.Safety.Effects`).
  *
  * The signature is `Stella.Core.Semantics.Examples.Eff.eff_sig`, which is
  * well formed (`eff_sig_ok`). The global environment is the empty one,
@@ -34,6 +36,19 @@
  *     reinstalls the handler. The program is typed at `Unit`, and so is
  *     each term of the sequence (`preservation_typed`); each is covered by
  *     the environment (`preservation_covers`).
+ *
+ * Progress and Effect safety:
+ *
+ *   - `progress_top` applied to the derivations of
+ *     `handle (perform Console.log "hi") with h_once` and of
+ *     `reify_prog` gives each a step. Both programs are in the stage-6
+ *     fragment, covered by the empty environment, and respect every
+ *     precondition, since the empty environment has no foreign entry
+ *     (`empty_genv_pre_ok`). The `perform` of each is an outcome of
+ *     progress under the `handle`, which takes the `full` rule.
+ *   - `effect_safety` applied to the run of `reify_prog` in two steps:
+ *     no term of it is an unhandled `perform`. `reify_prog` holds a
+ *     `perform` in an evaluation position, under a handler of its key.
  *)
 module Stella.Core.Safety.Examples.Eff
 open Stella.Core.Syntax
@@ -51,6 +66,9 @@ open Stella.Core.Semantics.Step
 open Stella.Core.Sig.Examples
 open Stella.Core.Semantics.Examples
 open Stella.Core.Semantics.Examples.Eff
+open Stella.Core.Safety.Progress.Eff
+open Stella.Core.Safety.Progress
+open Stella.Core.Safety.Effects
 
 (** The premises of preservation hold at `eff_sig`, the empty run-time
     contexts and the empty environment. *)
@@ -121,3 +139,45 @@ val reify_preserved : unit
             typed eff_sig [] (closed_ctx []) reify_1 t_unit /\
             typed eff_sig [] (closed_ctx []) reify_2 t_unit /\
             covers eff_sig empty_genv reify_1 /\ covers eff_sig empty_genv reify_2)
+
+(** * Progress *)
+
+(** The empty environment has no foreign entry, so every term respects
+    the preconditions under it. *)
+val empty_genv_pre_ok (sg: sig) (e: exp) : Lemma (pre_ok sg empty_genv e)
+
+(** The premises of `progress_top` on the two programs. *)
+val handled_terms_ok : unit
+  -> Lemma (stage6_frag (EHandle log_hi h_once) /\ covers eff_sig empty_genv (EHandle log_hi h_once) /\
+            stage6_frag reify_prog /\ covers eff_sig empty_genv reify_prog)
+
+let full_once_progress : progress eff_sig empty_genv [] [] (EHandle log_hi h_once) =
+  eff_premises ();
+  handled_terms_ok ();
+  empty_genv_pre_ok eff_sig (EHandle log_hi h_once);
+  progress_top full_once_typing [] []
+
+let reify_progress : progress eff_sig empty_genv [] [] reify_prog =
+  eff_premises ();
+  handled_terms_ok ();
+  empty_genv_pre_ok eff_sig reify_prog;
+  progress_top reify_prog_typing [] []
+
+(** Neither program is a value, so progress gives each a step. *)
+val handled_progress_steps : unit -> Lemma (PStep? full_once_progress /\ PStep? reify_progress)
+
+(** * Effect safety *)
+
+(** The run `reify_prog → reify_1 → reify_2`, and its prefixes. *)
+let reify_run_0 : steps eff_sig empty_genv [] [] reify_prog [] [] reify_prog = Steps_Refl
+
+let reify_run_1 : steps eff_sig empty_genv [] [] reify_prog [] [] reify_1 =
+  Steps_Step reify_step_1 Steps_Refl
+
+let reify_run_2 : steps eff_sig empty_genv [] [] reify_prog [] [] reify_2 =
+  Steps_Step reify_step_1 (Steps_Step reify_step_2 Steps_Refl)
+
+(** No term of the run is an unhandled `perform` (`effect_safety`). *)
+val reify_effect_safe : unit
+  -> Lemma (~(unhandled_perform eff_sig reify_prog) /\ ~(unhandled_perform eff_sig reify_1) /\
+            ~(unhandled_perform eff_sig reify_2))

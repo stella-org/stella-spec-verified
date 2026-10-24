@@ -36,13 +36,13 @@ Proven so far:
 - Row algebra: in a consistent context a kinded row holds one payload per key and splits at any key it holds. If `( k : τ | ρ ) ≡ ( k : τ′ | ρ′ )` and neither `ρ` nor `ρ′` holds `k`, then `τ ≡ τ′` and `ρ ≡ ρ′`.
 - The reduction relation of the pure fragment is defined (global environment with typed foreign adapters and erasure coherence, evaluation contexts, head rules). For it: typing decomposes and recomposes at every evaluation frame, canonical forms hold at every elimination type, and the occurrences of a `match` are defined and typed.
 - Type safety of the pure rules: a step preserves the exact type, ambient row, and coverage of a closed well-typed term. A closed well-typed term at the empty row that is covered, calls foreigns only inside their preconditions, and has no `perform` (so no `fail` leaf), `handle`, region, cell, `letrec`, `force`, or `fill` is a value or takes one step.
+- Effect handlers: return, `full`, and `fast` clauses reduce as the specification gives them, deep and multi-shot, and every step, the handler steps included, preserves the exact type, ambient row, and coverage of a closed well-typed term.
 
-Under review: the reduction rules of effect handlers (return, `full`, and `fast` clauses, deep and multi-shot), and the preservation of typing and of coverage across every step, the handler steps included.
+Under review, for the reduction relation so far (the pure and effect rules): one-step progress extended to effect handlers (a closed well-typed term at the empty row, covered and calling foreigns inside their preconditions, with no region, cell, `letrec`, `force`, or `fill`, is a value or steps); and effect safety: under a conforming global environment, from any closed term typed at the empty row, no sequence of steps reaches a `perform` that no handler of its key encloses. The rules for regions, cells, and `letrec` must re-establish both when they are added.
 
 Planned:
 
-- Preservation and progress extended to effects, regions and cells, and `letrec` with its store, and chained into type safety for whole runs.
-- Effect safety: a well-typed program never reaches an unhandled `perform`.
+- Preservation, progress, and effect safety extended to regions and cells, and to `letrec` with its store, and chained into type safety for whole runs.
 - Initialization safety: a well-typed program never reads an uninitialized `letrec` binding, and in particular never re-enters an initializer that is still being evaluated (the `φ_init` fault).
 - Erasure: each typed reduction step corresponds to zero or one step of the erased program, with the same faults.
 
